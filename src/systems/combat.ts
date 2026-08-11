@@ -63,18 +63,64 @@ export function updateCombat(world: World, dt: number) {
 
   if (world.input.moving) {
     p.stillTime = 0; // moving: reset, never fire
+    p.burstLeft = 0; // and a burst you walked out of does not resume later
     return;
   }
 
   p.stillTime += dt;
-  if (p.stillTime < CONFIG.player.settleDelay) return;
+  if (p.stillTime < p.settleDelay) return;
+
+  // Mid-burst: the reload clock is already running, so this only decides when
+  // the next bolt of the current burst leaves. Re-targeting per bolt is
+  // deliberate — a burst that keeps firing at something already dead would be
+  // strictly worse than a bow, which is the opposite of what a legendary owes.
+  if (p.burstLeft > 0) {
+    p.burstTimer -= dt;
+    if (p.burstTimer <= 0) {
+      const t = findTarget(world);
+      if (t && dist(p.pos, t.pos) <= p.range) fireShot(world, t);
+      p.burstLeft -= 1;
+      p.burstTimer = CONFIG.weapon.burstInterval;
+    }
+    return;
+  }
 
   if (p.cooldown <= 0) {
     const target = findTarget(world);
     if (!target) return;
     if (dist(p.pos, target.pos) > p.range) return; // out of range: hold fire
-    fireShot(world, target);
-    p.cooldown = 1 / p.attackRate;
+
+    // A single frame can owe more than one volley.
+    //
+    // Attack Speed is uncapped, so a deep run can buy a fire rate above the
+    // refresh rate. Firing once per frame and resetting the clock silently
+    // capped that at the device's fps — the same build was measurably stronger
+    // on a 120Hz phone than a 60Hz one, which is not a difficulty setting we
+    // want to ship. Paying down the debt in a loop makes the rate honest.
+    //
+    // `+=` rather than `=` so the remainder carries: resetting to a full
+    // interval every time would quietly round the rate down at any fps.
+    const interval = 1 / p.attackRate;
+    let volleys = 0;
+
+    while (p.cooldown <= 0 && volleys < CONFIG.weapon.maxVolleysPerFrame) {
+      fireShot(world, target);
+      p.cooldown += interval;
+      volleys++;
+
+      // A burst schedules its own follow-up shots on burstTimer, so it must not
+      // also be looped here — that would fire bursts inside bursts.
+      if (p.pattern === 'burst') {
+        p.burstLeft = CONFIG.weapon.burstShots - 1;
+        p.burstTimer = CONFIG.weapon.burstInterval;
+        break;
+      }
+    }
+
+    // A long stall (backgrounded app, dropped frames) can leave the clock many
+    // intervals behind. Once the per-frame budget is spent, forget the rest
+    // rather than firing it later as an unearned burst.
+    if (p.cooldown < 0) p.cooldown = 0;
   }
 }
 
@@ -142,16 +188,28 @@ function aimCone(p: { pos: Vec2 }, target: Targetable, n: number): number {
 
 // Crit is rolled per projectile rather than per shot, so multishot genuinely
 // buys more chances to spike — the two cards are meant to reinforce each other.
+// How much Focus is currently paying. Read at spawn time rather than baked into
+// p.damage, because the ramp has to be able to fall back to nothing the instant
+// the player moves — and a shot already in flight keeps whatever it launched
+// with, same as every other modifier.
+function focusMult(p: World['player']): number {
+  if (p.focus <= 0) return 1;
+  const c = CONFIG.abilities.focus;
+  const held = Math.min(p.stillTime, c.rampSeconds);
+  return 1 + p.focus * c.perStackPerSec * held;
+}
+
 function spawnShot(world: World, dir: Vec2) {
   const p = world.player;
   const crit = p.critChance > 0 && Math.random() < p.critChance;
+  const dmg = p.damage * focusMult(p);
 
   world.projectiles.push({
     id: world.nextId++,
     pos: { x: p.pos.x, y: p.pos.y },
     vel: { x: dir.x * CONFIG.projectile.speed, y: dir.y * CONFIG.projectile.speed },
     radius: CONFIG.projectile.radius,
-    damage: crit ? p.damage * p.critMult : p.damage,
+    damage: crit ? dmg * p.critMult : dmg,
     life: CONFIG.projectile.life,
     pierce: p.pierce,
     hitIds: [],
@@ -160,6 +218,7 @@ function spawnShot(world: World, dir: Vec2) {
     burn: p.burn,
     frost: p.frost,
     crit,
+    homing: p.homing,
   });
 }
 
@@ -210,6 +269,48 @@ function bounceOffArena(pr: Projectile, world: World): boolean {
   return hit;
 }
 
+// Bend a shot toward the nearest body it hasn't already hit.
+//
+// Turn rate is capped rather than snapping the velocity at the target: a shot
+// that turns instantly is a guaranteed hit, which would delete positioning as a
+// skill and make every other targeting rule pointless. Speed is preserved, so
+// steering costs nothing in damage-per-second — it only buys accuracy.
+function steerToward(pr: Projectile, world: World, dt: number) {
+  let best: Vec2 | null = null;
+  let bestD = Infinity;
+
+  for (const e of world.enemies) {
+    if (!e.alive || pr.hitIds.includes(e.id)) continue;
+    const d = dist(pr.pos, e.pos);
+    if (d < bestD) { bestD = d; best = e.pos; }
+  }
+  const boss = world.boss;
+  if (boss && boss.alive && !pr.hitIds.includes(-1)) {
+    const d = dist(pr.pos, boss.pos);
+    if (d < bestD) { bestD = d; best = boss.pos; }
+  }
+  if (!best) return;
+
+  const speed = Math.hypot(pr.vel.x, pr.vel.y);
+  if (speed < 1e-6) return;
+
+  const cur = Math.atan2(pr.vel.y, pr.vel.x);
+  const want = Math.atan2(best.y - pr.pos.y, best.x - pr.pos.x);
+
+  // Shortest way round the circle, so a shot behind the target turns the near
+  // way rather than sweeping all the way through 360°.
+  let delta = want - cur;
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta < -Math.PI) delta += Math.PI * 2;
+
+  const maxTurn = CONFIG.abilities.homing.turnPerStack * pr.homing * dt;
+  const turn = Math.max(-maxTurn, Math.min(maxTurn, delta));
+  const next = cur + turn;
+
+  pr.vel.x = Math.cos(next) * speed;
+  pr.vel.y = Math.sin(next) * speed;
+}
+
 // Move projectiles, expire them, and resolve hits (with piercing + ricochet).
 export function updateProjectiles(world: World, dt: number) {
   const { bounds } = world;
@@ -217,6 +318,8 @@ export function updateProjectiles(world: World, dt: number) {
 
   for (const pr of world.projectiles) {
     if (!pr.alive) continue;
+
+    if (pr.homing > 0) steerToward(pr, world, dt);
 
     // Remember where the step started so cover can be tested as a segment —
     // a fast shot must not tunnel through a thin wall between two frames.

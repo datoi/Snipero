@@ -2,23 +2,27 @@ import { CONFIG } from '../config';
 import { Boss, World } from '../engine/types';
 import { dist, normalize, rotate, sub, vec } from '../engine/vec';
 import { confine, moveCircle } from './obstacles';
-import { addFlash, addShake, emitWallSpark } from './fx';
+import { spawnBlast } from './blastSpawn';
+import { addShake, emitWallSpark } from './fx';
+import { damagePlayer } from './playerDamage';
 import { makeStatus, slowFactor } from './status';
 import { bossScale } from './difficulty';
 import { haptic, sfx } from './sfx';
 
 // Create a boss for a boss room, scaled to how many bosses came before it.
-export function makeBoss(w: number, h: number, roomIndex: number): Boss {
+export function makeBoss(w: number, h: number, roomIndex: number, variant = 0): Boss {
   const c = CONFIG.boss;
+  const v = c.variants[variant % c.variants.length];
   const s = bossScale(roomIndex);
-  const hp = Math.round(c.maxHp * s.hp);
+  const hp = Math.round(c.maxHp * s.hp * v.hpMult);
   return {
     pos: vec(w / 2, h * 0.25),
     radius: c.radius,
     hp,
     maxHp: hp,
-    contactDamage: c.contactDamage * s.damage,
-    dmgMult: s.damage,
+    contactDamage: c.contactDamage * s.damage * v.damageMult,
+    dmgMult: s.damage * v.damageMult,
+    variant: variant % c.variants.length,
     phase: 0,
     state: 'intro',
     stateTimer: c.introTime,
@@ -30,6 +34,17 @@ export function makeBoss(w: number, h: number, roomIndex: number): Boss {
     alive: true,
     status: makeStatus(),
   };
+}
+
+// Which fight this boss is running. Exported so the renderer can tint it and the
+// HUD can name it without either reaching into the config table itself.
+export function bossVariant(b: Boss) {
+  const vs = CONFIG.boss.variants;
+  return vs[b.variant % vs.length];
+}
+
+export function bossPhases(b: Boss) {
+  return bossVariant(b).phases;
 }
 
 // Announce the boss the moment the room loads, while the intro telegraph plays.
@@ -49,9 +64,10 @@ export function updateBoss(world: World, dt: number) {
   // Update phase from current HP fraction (only ever deepens).
   const frac = b.hp / b.maxHp;
   let target = 0;
-  for (let i = 0; i < c.phases.length; i++) if (frac <= c.phases[i].threshold) target = i;
+  const phases = bossPhases(b);
+  for (let i = 0; i < phases.length; i++) if (frac <= phases[i].threshold) target = i;
   b.phase = target;
-  const phase = c.phases[b.phase];
+  const phase = phases[b.phase];
 
   b.stateTimer -= dt;
 
@@ -84,9 +100,7 @@ export function updateBoss(world: World, dt: number) {
 
   // Contact damage.
   if (dist(b.pos, p.pos) <= b.radius + p.radius) {
-    p.hp -= b.contactDamage * dt;
-    if (p.hp < 0) p.hp = 0;
-    addFlash(world, CONFIG.fx.flash.contact);
+    damagePlayer(world, b.contactDamage * dt, { continuous: true });
   }
 }
 
@@ -114,7 +128,10 @@ function startWindup(b: Boss, attacks: Boss['currentAttack'][] | readonly string
   const atk = attacks[Math.floor(Math.random() * attacks.length)] as Boss['currentAttack'];
   b.currentAttack = atk;
   const telegraph =
-    atk === 'radial' ? c.radial.telegraph : atk === 'volley' ? c.volley.telegraph : c.charge.telegraph;
+    atk === 'radial' ? c.radial.telegraph
+    : atk === 'volley' ? c.volley.telegraph
+    : atk === 'bombs' ? c.bombs.telegraph
+    : c.charge.telegraph;
   b.state = 'windup';
   b.stateTimer = telegraph;
   sfx('telegraph');
@@ -124,7 +141,27 @@ function startWindup(b: Boss, attacks: Boss['currentAttack'][] | readonly string
 function beginAttack(world: World, b: Boss) {
   const c = CONFIG.boss;
 
-  if (b.currentAttack === 'radial') {
+  if (b.currentAttack === 'bombs') {
+    // Seed the floor with delayed detonations around the player rather than at
+    // them. Every other boss attack asks "can you dodge this?"; this one asks
+    // "where will you be in a second?", which is a different question and the
+    // reason the fight stops being one pattern read four times.
+    const bc = c.bombs;
+    const p = world.player;
+    for (let i = 0; i < bc.count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const dist = Math.random() * bc.scatter;
+      spawnBlast(
+        world,
+        { x: p.pos.x + Math.cos(a) * dist, y: p.pos.y + Math.sin(a) * dist },
+        bc.radius,
+        bc.damage * b.dmgMult,
+        bc.fuse + i * bc.stagger,
+      );
+    }
+    b.state = 'recover';
+    b.stateTimer = c.recover;
+  } else if (b.currentAttack === 'radial') {
     const rc = c.radial;
     for (let i = 0; i < rc.count; i++) {
       const dir = rotate(vec(0, -1), (i / rc.count) * Math.PI * 2);
@@ -210,5 +247,6 @@ function pushBossShot(
     burn: 0,
     frost: 0,
     crit: false,
+    homing: 0,
   });
 }

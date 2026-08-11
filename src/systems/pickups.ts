@@ -3,6 +3,7 @@ import { Pickup, PickupKind, World } from '../engine/types';
 import { Vec2, dist, normalize, sub } from '../engine/vec';
 import { emitNumber } from './fx';
 import { resolveCircle } from './obstacles';
+import { rollGearDrop } from './gear';
 import { sfx } from './sfx';
 
 // Loot on the floor. Drops pop outward from the kill, settle, then home in once
@@ -11,7 +12,7 @@ import { sfx } from './sfx';
 
 const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
 
-function push(world: World, kind: PickupKind, at: Vec2, value: number) {
+function push(world: World, kind: PickupKind, at: Vec2, value: number, gearId?: string) {
   const c = CONFIG.pickups;
   const a = rand(0, Math.PI * 2);
   const sp = rand(c.popSpeed[0], c.popSpeed[1]);
@@ -22,9 +23,12 @@ function push(world: World, kind: PickupKind, at: Vec2, value: number) {
     pos: { x: at.x, y: at.y },
     vel: { x: Math.cos(a) * sp, y: Math.sin(a) * sp },
     value,
-    life: c.life,
+    // Equipment does not rot on the floor. Losing a legendary because you were
+    // busy not dying would be the single most annoying thing this game could do.
+    life: kind === 'gear' ? Infinity : c.life,
     magnet: false,
     bob: rand(0, Math.PI * 2),
+    gearId,
   };
   // Never drop loot inside a rock — it would be unreachable.
   resolveCircle(p.pos, c.radius, world.obstacles, world.bounds);
@@ -58,12 +62,19 @@ export function dropLoot(world: World, at: Vec2, gold: number) {
   if (Math.random() < c.heartChance) push(world, 'heart', at, c.heartHeal);
 }
 
-// The boss pays out properly: a pile of gold and guaranteed healing, since the
-// next room starts immediately after.
+// The boss pays out properly: a pile of gold, guaranteed healing, and a piece of
+// equipment. The gear is the reason to fight a boss rather than the reason to
+// survive one — gold buys the loadout you already know you want, a drop is the
+// one that changes your mind.
 export function dropBossLoot(world: World, at: Vec2, gold: number) {
   const c = CONFIG.pickups;
   dropCoins(world, at, gold, c.bossCoins);
   for (let i = 0; i < c.bossHearts; i++) push(world, 'heart', at, c.bossHeartHeal);
+  dropGear(world, at, rollGearDrop(world.roomIndex));
+}
+
+export function dropGear(world: World, at: Vec2, gearId: string) {
+  push(world, 'gear', at, 0, gearId);
 }
 
 // A chest's contents. Same shape as the boss payout, but the caller sets the
@@ -77,6 +88,7 @@ export function dropChestLoot(
 ) {
   dropCoins(world, at, gold, CONFIG.pickups.bossCoins);
   for (let i = 0; i < hearts; i++) push(world, 'heart', at, heartHeal);
+  dropGear(world, at, rollGearDrop(world.roomIndex));
 }
 
 // Sweep everything still on the floor toward the player. Called the moment a
@@ -103,7 +115,11 @@ export function updatePickups(world: World, dt: number) {
     // you step back out of range. Losing a coin you already earned feels bad.
     // An unusable heart doesn't latch at all — it should read as still sitting
     // there waiting, not as something that chased you down and did nothing.
-    if (!p.magnet && canClaim && d <= c.magnetRadius) p.magnet = true;
+    // Stored, not derived. Recovering the stack count from goldBonus worked
+    // only while Greed was the sole source of it — the first hero or gear piece
+    // to grant gold would have silently widened the pickup radius too.
+    const magnetAt = c.magnetRadius + world.player.magnetBonus;
+    if (!p.magnet && canClaim && d <= magnetAt) p.magnet = true;
 
     if (p.magnet) {
       const dir = normalize(sub(player.pos, p.pos));
@@ -139,9 +155,20 @@ function collect(world: World, p: Pickup) {
   p.life = 0; // marked spent; filtered out at the end of the tick
 
   if (p.kind === 'coin') {
-    world.runGold += p.value;
+    // Greed is applied on collection rather than at the drop, so a card taken
+    // mid-room still pays out on coins already lying on the floor.
+    world.runGold += Math.round(p.value * (1 + world.player.goldBonus));
     sfx('coin');
     emitNumber(world, p.pos, p.value, CONFIG.fx.number.goldColor);
+    return;
+  }
+
+  if (p.kind === 'gear') {
+    // The run only records what was found. What it's worth — a new unlock, a
+    // level on something owned, or gold once it's maxed — is the save's call,
+    // and the simulation has no business reading the save to decide.
+    if (p.gearId) world.gearFound.push(p.gearId);
+    sfx('chestOpen');
     return;
   }
 

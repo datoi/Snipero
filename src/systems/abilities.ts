@@ -25,7 +25,15 @@ export type AbilityId =
   | 'rearShot'
   | 'crit'
   | 'blaze'
-  | 'frost';
+  | 'frost'
+  | 'focus'
+  | 'reach'
+  | 'greed'
+  | 'homing'
+  | 'thorns'
+  | 'shield'
+  | 'detonate'
+  | 'siphon';
 
 export type Rarity = 'common' | 'rare' | 'epic';
 
@@ -35,7 +43,13 @@ export interface AbilityDef {
   desc: string;
   color: string;
   rarity: Rarity;
-  /** How many times this card can be taken in one run. */
+  /**
+   * How many times this card can be taken in one run.
+   *
+   * CAN BE `Infinity` — three commons are uncapped on purpose (see below).
+   * Never loop to this value: `for (let i = 0; i < def.maxStacks; i++)` hangs.
+   * Use `isMaxed(player, id)` to ask the question instead.
+   */
   maxStacks: number;
   apply: (p: Player) => void; // mutates the player when drafted
 }
@@ -51,13 +65,34 @@ const A = CONFIG.abilities;
 
 export const ABILITIES: AbilityDef[] = [
   // ── Common: keep the numbers moving ──
+  //
+  // These three are deliberately UNCAPPED, and they are the only cards that are.
+  //
+  // A run has no last room, so the card pool cannot have a last card. With every
+  // common capped, a deep run drained all 49 stacks and then kept levelling into
+  // an empty draft: player power flatlined while enemy HP carried on compounding,
+  // which is the same wall the XP curve used to build, just further out. Leaving
+  // exactly three commons uncapped means the draft can always offer a real choice
+  // of three — damage, rate, or survivability — rather than degenerating into a
+  // one-card overlay.
+  //
+  // This does not make commons crowd out the good cards: rollOne picks the tier
+  // first and only then a card inside it, so how often an epic appears is
+  // unaffected by how many commons are live. That decoupling is exactly what it
+  // was built for.
+  //
+  // Nor does it make the player immortal. Power compounds at 1.2 per stack and a
+  // deep run draws roughly one card per room split three ways (~1.06x damage per
+  // room), while enemy HP compounds at 1.085 per room — so the wave still wins
+  // eventually. Vitality is flat +25 against damage that scales multiplicatively,
+  // so it decays into a weak pick on its own, which is the intent.
   {
     id: 'damageUp',
     title: 'Power',
     desc: '+20% damage',
     color: '#ef4444',
     rarity: 'common',
-    maxStacks: 8,
+    maxStacks: Infinity,
     apply: (p) => { p.damage *= 1.2; },
   },
   {
@@ -66,7 +101,7 @@ export const ABILITIES: AbilityDef[] = [
     desc: '+18% fire rate',
     color: '#f59e0b',
     rarity: 'common',
-    maxStacks: 6,
+    maxStacks: Infinity,
     apply: (p) => { p.attackRate *= 1.18; },
   },
   {
@@ -75,7 +110,7 @@ export const ABILITIES: AbilityDef[] = [
     desc: '+25 max HP & heal 25',
     color: '#22c55e',
     rarity: 'common',
-    maxStacks: 8,
+    maxStacks: Infinity,
     apply: (p) => { p.maxHp += 25; p.hp = Math.min(p.maxHp, p.hp + 25); },
   },
   {
@@ -95,6 +130,37 @@ export const ABILITIES: AbilityDef[] = [
     rarity: 'common',
     maxStacks: 3,
     apply: (p) => { p.pierce += 1; },
+  },
+
+  {
+    id: 'focus',
+    title: 'Focus',
+    desc: `+${Math.round(A.focus.perStackPerSec * 100)}% damage per second held still`,
+    color: '#facc15',
+    rarity: 'common',
+    maxStacks: 5,
+    apply: (p) => { p.focus += 1; },
+  },
+  {
+    id: 'reach',
+    title: 'Longshot',
+    desc: '+18% attack range',
+    color: '#94a3b8',
+    rarity: 'common',
+    maxStacks: 4,
+    apply: (p) => { p.range *= 1.18; },
+  },
+  {
+    id: 'greed',
+    title: 'Greed',
+    desc: `+${Math.round(A.greed.goldPerStack * 100)}% gold, wider pickup range`,
+    color: '#ffd45e',
+    rarity: 'common',
+    maxStacks: 3,
+    apply: (p) => {
+      p.goldBonus += A.greed.goldPerStack;
+      p.magnetBonus += A.greed.magnetPerStack;
+    },
   },
 
   // ── Rare: change the shape of your fire ──
@@ -146,6 +212,37 @@ export const ABILITIES: AbilityDef[] = [
     },
   },
 
+  {
+    id: 'homing',
+    title: 'Seeker',
+    desc: 'Shots curve toward enemies',
+    color: '#5ce0d0',
+    rarity: 'rare',
+    maxStacks: 3,
+    apply: (p) => { p.homing += 1; },
+  },
+  {
+    id: 'thorns',
+    title: 'Thorns',
+    desc: 'Enemies that touch you take damage',
+    color: '#a3e635',
+    rarity: 'rare',
+    maxStacks: 3,
+    apply: (p) => { p.thorns += 1; },
+  },
+  {
+    id: 'shield',
+    title: 'Bulwark',
+    desc: `+${A.shield.perStack} shield, refills out of combat`,
+    color: '#60a5fa',
+    rarity: 'rare',
+    maxStacks: 4,
+    apply: (p) => {
+      p.shieldMax += A.shield.perStack;
+      p.shield += A.shield.perStack; // arrives full, or the card does nothing yet
+    },
+  },
+
   // ── Epic: the cards a run gets built around ──
   {
     id: 'blaze',
@@ -164,6 +261,24 @@ export const ABILITIES: AbilityDef[] = [
     rarity: 'epic',
     maxStacks: 3,
     apply: (p) => { p.frost += 1; },
+  },
+  {
+    id: 'detonate',
+    title: 'Detonate',
+    desc: 'Kills explode',
+    color: '#ff9d5c',
+    rarity: 'epic',
+    maxStacks: 3,
+    apply: (p) => { p.detonate += 1; },
+  },
+  {
+    id: 'siphon',
+    title: 'Siphon',
+    desc: `Heal ${Math.round(A.siphon.fractionPerStack * 100)}% of damage dealt`,
+    color: '#e05cae',
+    rarity: 'epic',
+    maxStacks: 3,
+    apply: (p) => { p.lifesteal += A.siphon.fractionPerStack; },
   },
 ];
 

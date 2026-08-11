@@ -1,21 +1,46 @@
+import { CONFIG } from '../config';
 import { World } from '../engine/types';
 import { loadRoom } from './world';
+import { clearInput } from './movement';
 import { vacuumPickups } from './pickups';
+import { shrinesResolved } from './shrine';
 import { sfx } from './sfx';
 
 // Room-by-room progression (mirrors the Unity RoomManager loop):
 //   fighting → all enemies dead → open door → player walks through → next room.
 export function updateRooms(world: World) {
   if (world.phase === 'fighting') {
-    // A chest room spawns nothing, so the generic "no enemies left" test is true
-    // on its very first frame — the exit opened before the player had touched
-    // the reward, which made the whole room walk-past-able. The chest is that
-    // room's clear condition, exactly as the wave is a combat room's.
-    if (world.chest && !world.chest.paid) return;
+    // A reward room spawns nothing, so the generic "no enemies left" test is
+    // true on its very first frame — the exit opened before the player had made
+    // their pick, which made the whole room walk-past-able. Choosing an offer is
+    // that room's clear condition, exactly as the wave is a combat room's.
+    if (!shrinesResolved(world)) return;
 
     // Cleared when no enemies remain AND the boss (if any) is dead.
     if (world.enemies.length === 0 && world.boss === null) {
       world.phase = 'cleared';
+
+      // The last room of a chapter has no door to open — clearing it is the end
+      // of the run, and the only ending that isn't a death. Endless has no last
+      // room by definition, so it never takes this branch.
+      if (isFinalRoom(world)) {
+        // Sweep the floor first: winning must not cost the player the loot they
+        // were standing next to when the boss died.
+        vacuumPickups(world);
+        for (const p of world.pickups) {
+          if (p.kind === 'gear' && p.gearId) world.gearFound.push(p.gearId);
+        }
+        world.runGold += world.pickups
+          .filter((p) => p.kind === 'coin')
+          .reduce((sum, p) => sum + p.value, 0);
+        world.pickups = [];
+
+        world.status = 'won';
+        clearInput(world);
+        sfx('chestOpen');
+        return;
+      }
+
       world.door.open = true;
       sfx('doorOpen');
       // Sweep the floor toward the player rather than making them comb an
@@ -27,9 +52,18 @@ export function updateRooms(world: World) {
 
   // phase === 'cleared': advance when the player steps into the open doorway.
   if (world.door.open && playerInDoor(world)) {
-    world.roomIndex += 1;
-    loadRoom(world, world.roomIndex); // resets phase to 'fighting', locks the door
+    loadRoom(world, world.roomIndex + 1); // advances roomIndex, relocks the door
   }
+}
+
+// How many rooms this run is, and whether we're standing in the last one.
+export function chapterRooms(world: World): number {
+  const chapters = CONFIG.chapters;
+  return chapters[world.chapter % chapters.length].rooms;
+}
+
+export function isFinalRoom(world: World): boolean {
+  return !world.endless && world.roomIndex >= chapterRooms(world) - 1;
 }
 
 function playerInDoor(world: World): boolean {

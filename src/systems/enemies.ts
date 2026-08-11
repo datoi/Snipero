@@ -2,7 +2,10 @@ import { CONFIG } from '../config';
 import { Enemy, World } from '../engine/types';
 import { Vec2, dist, normalize, sub } from '../engine/vec';
 import { blocked, confine, hasLineOfSight, moveCircle, segmentBlocked } from './obstacles';
-import { addFlash, addShake, emitHit, emitWallSpark } from './fx';
+import { addShake, emitHit, emitWallSpark } from './fx';
+import { damagePlayer } from './playerDamage';
+import { damageEnemy } from './damage';
+import { spawnBlast } from './blastSpawn';
 import { slowFactor } from './status';
 import { haptic, sfx } from './sfx';
 
@@ -28,6 +31,9 @@ export function updateEnemies(world: World, dt: number) {
       case 'charger':
         updateCharger(world, e, dt);
         break;
+      case 'bomber':
+        updateBomber(world, e, dt);
+        break;
       default:
         updateChaser(world, e, dt);
         break;
@@ -39,9 +45,14 @@ export function updateEnemies(world: World, dt: number) {
     // Contact damage to the player. This ticks every frame, so it gets a soft
     // sustained flash rather than the punchy per-hit treatment.
     if (dist(e.pos, p.pos) <= e.radius + p.radius) {
-      p.hp -= e.contactDamage * dt;
-      if (p.hp < 0) p.hp = 0;
-      addFlash(world, CONFIG.fx.flash.contact);
+      damagePlayer(world, e.contactDamage * dt, { continuous: true });
+
+      // Thorns. Scaled off what the enemy actually hits for, so it answers the
+      // thing that's hurting you rather than paying out flat against everything.
+      if (p.thorns > 0) {
+        const back = e.contactDamage * CONFIG.abilities.thorns.reflectPerStack * p.thorns * dt;
+        damageEnemy(world, e, back, { quiet: true, color: '#a3e635' });
+      }
     }
   }
 
@@ -98,6 +109,41 @@ function updateShooter(world: World, e: Enemy, dt: number) {
     } else {
       e.attackTimer = c.attackCooldown * 0.25; // re-check soon rather than every frame
     }
+  }
+}
+
+// ── Bomber: sprint in, commit to a fuse, detonate. ──
+//
+// It never touches the player for damage; the blast is the whole threat. Once
+// the fuse is lit it stops moving and cannot be called off, which is what makes
+// running a real answer — otherwise it would simply follow the player into the
+// explosion and the only counter would be killing it, every time.
+function updateBomber(world: World, e: Enemy, dt: number) {
+  const p = world.player;
+  const c = CONFIG.enemies.bomber;
+  e.stateTimer -= dt;
+
+  if (e.state === 'idle') {
+    const d = dist(e.pos, p.pos);
+    if (d > e.radius + p.radius + 1) {
+      const dir = normalize(sub(p.pos, e.pos));
+      const sp = speedOf(e);
+      step(world, e, dir.x * sp * dt, dir.y * sp * dt);
+    }
+    if (d < c.triggerRange) {
+      e.state = 'windup';
+      e.stateTimer = c.fuse;
+      sfx('telegraph');
+    }
+    return;
+  }
+
+  // Committed. Stand still and burn down; the blast is spawned here rather than
+  // on death so a bomber that reaches the player still pays out even though
+  // nothing killed it.
+  if (e.stateTimer <= 0) {
+    spawnBlast(world, e.pos, c.blastRadius, e.blastDamage, 0);
+    e.alive = false;
   }
 }
 
@@ -322,6 +368,7 @@ function fireEnemyProjectile(world: World, e: Enemy, dir: { x: number; y: number
     burn: 0,
     frost: 0,
     crit: false,
+    homing: 0,
   });
 }
 
@@ -357,14 +404,9 @@ export function updateEnemyProjectiles(world: World, dt: number) {
     }
 
     if (dist(pr.pos, p.pos) <= pr.radius + p.radius) {
-      p.hp -= pr.damage;
-      if (p.hp < 0) p.hp = 0;
       pr.alive = false;
       emitHit(world, pr.pos, pr.damage, normalize(pr.vel));
-      addShake(world, CONFIG.fx.shake.playerHit);
-      addFlash(world, CONFIG.fx.flash.playerHit);
-      sfx('playerHit');
-      haptic('medium');
+      damagePlayer(world, pr.damage);
     }
   }
 

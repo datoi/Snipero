@@ -1,14 +1,18 @@
 import { Vec2 } from './vec';
 import { AbilityId } from '../systems/abilities';
 
-// The three enemy archetypes (mirrors the Unity EnemyArchetype enum).
-export type EnemyKind = 'chaser' | 'shooter' | 'charger';
+// The enemy archetypes (mirrors the Unity EnemyArchetype enum).
+export type EnemyKind = 'chaser' | 'shooter' | 'charger' | 'bomber';
 
-// Charger AI state machine.
-export type ChargerState = 'idle' | 'windup' | 'charging';
+// Shared AI state machine. Named for the charger because it was the first to
+// need one, but the bomber runs the same three beats — approach, telegraph,
+// commit — so it reuses the states rather than carrying a second enum and a
+// second timer for the identical shape.
+export type EnemyState = 'idle' | 'windup' | 'charging';
 
-// Overall run state.
-export type RunStatus = 'playing' | 'drafting' | 'dead';
+// Overall run state. Everything except 'playing' freezes the simulation; only
+// cosmetics keep ticking, so a death burst finishes behind the overlay.
+export type RunStatus = 'playing' | 'drafting' | 'paused' | 'dead' | 'won';
 
 // ── Status effects ──
 // Debuffs a player shot can leave on a body. Shared by Enemy and Boss so the
@@ -21,6 +25,15 @@ export interface Status {
   slowTime: number;   // seconds of slow remaining
   slowMult: number;   // movement multiplier while slowed (1 = unaffected)
 }
+
+// How a weapon delivers its shot.
+//   single — one volley per cooldown (bow, staff)
+//   arc    — the same volley, fanned wide and short (scythe)
+//   burst  — several volleys in quick succession, then a long reload (repeater)
+// `arc` needs no firing logic of its own: it is `single` with a wider fan and
+// more projectiles, which the existing spread code already handles. Only burst
+// changes the shape of time, so only burst gets state.
+export type ShotPattern = 'single' | 'arc' | 'burst';
 
 // The player hero.
 export interface Player {
@@ -54,6 +67,38 @@ export interface Player {
   // readout on the draft cards.
   stacks: Partial<Record<AbilityId, number>>;
 
+  // Fraction of incoming damage ignored (armour). Applied in one place, so a
+  // future shield or dodge stat has an obvious home next to it.
+  resist: number;
+
+  // ── Defensive layers, all resolved in damagePlayer ──
+  shieldMax: number;    // 0 = no shield card taken
+  shield: number;       // current absorb pool
+  shieldTimer: number;  // seconds of not-being-hit before it starts refilling
+  thorns: number;       // damage returned to whatever touched you
+
+  // ── Offensive behaviours ──
+  // Ramping damage while standing still. This one exists to push on the game's
+  // central tension rather than to add a number: holding your ground is already
+  // how you shoot, and this makes holding it *longer* worth something.
+  focus: number;        // stacks; 0 = no ramp
+  homing: number;       // stacks of projectile steering
+  detonate: number;     // stacks; kills leave a blast behind
+  lifesteal: number;    // fraction of damage dealt returned as HP
+  goldBonus: number;    // multiplier on gold picked up
+  magnetBonus: number;  // extra pickup radius, in px
+
+  // How the equipped weapon delivers a shot. Stat multipliers make a weapon
+  // stronger; this is what makes one feel different from another.
+  pattern: ShotPattern;
+  burstLeft: number;    // shots remaining in the current burst
+  burstTimer: number;   // seconds until the next shot of that burst
+
+  // Beat between planting your feet and the first shot. Per-player rather than a
+  // constant because it is the number a hero is most worth changing — it sets
+  // the whole rhythm of stop-and-shoot.
+  settleDelay: number;
+
   cooldown: number;     // seconds until next shot is allowed
   stillTime: number;    // how long the player has been standing still
 
@@ -81,9 +126,10 @@ export interface Enemy {
 
   attackTimer: number;      // shooter: seconds until next shot
   projectileDamage: number; // shooter: damage per shot, already depth-scaled
+  blastDamage: number;      // bomber: detonation damage, already depth-scaled
 
-  state: ChargerState;   // charger: current AI state
-  stateTimer: number;    // charger: time left in the current state (or cooldown)
+  state: EnemyState;     // charger/bomber: current AI state
+  stateTimer: number;    // time left in the current state (or cooldown)
   chargeDir: Vec2;       // charger: locked direction during a dash
 
   // Wall-following. When cover blocks the approach, a direction is chosen once
@@ -129,24 +175,59 @@ export interface Projectile {
   burn: number;      // blaze stacks to apply on hit
   frost: number;     // frost stacks to apply on hit
   crit: boolean;     // rolled critical — drives the bigger, tinted number
+  homing: number;    // stacks of steering; 0 = flies straight
 }
 
 // ── Room structure ──
 // A run is combat rooms punctuated by a boss, then a breather to spend the
 // win on. Without the breather every room is the same beat at a louder volume.
-export type RoomType = 'combat' | 'boss' | 'chest';
+export type RoomType = 'combat' | 'boss' | 'reward';
 
-// The reward in a chest room. Walk into it to open it.
-export interface Chest {
+// What a shrine gives you, and what it takes.
+//   chest  — gold, healing and a piece of equipment. The safe pick.
+//   angel  — a free ability card.
+//   devil  — two cards, paid for out of your maximum health.
+//   font   — heal to full. Worthless when you're healthy, priceless when not.
+//   forge  — a card, bought with the gold you picked up this run.
+export type ShrineId = 'chest' | 'angel' | 'devil' | 'font' | 'forge';
+
+// One offer in a reward room. Three spawn; taking one dissolves the rest, so
+// the room is a decision rather than a lap of the arena collecting everything.
+export interface Shrine {
+  id: number;
+  kind: ShrineId;
   pos: Vec2;
   radius: number;
-  opened: boolean;
-  openTimer: number;  // brief beat between the lid popping and the payout
-  paid: boolean;      // guards the payout so it can only ever fire once
+  goldCost: number;      // 0 for the free ones
+  hpCostFrac: number;    // fraction of MAX hp, charged on claim
+  claimed: boolean;
+  openTimer: number;     // beat between claiming and the payout landing
+  paid: boolean;         // guards the payout so it can only ever fire once
+  dissolving: boolean;   // a sibling was taken; this one is fading out
+}
+
+// ── Blasts ──
+// A delayed area detonation: it lands, telegraphs, then hurts whatever is inside
+// its radius. Deliberately not owned by the bomber that usually spawns it — the
+// fuse/telegraph/damage shape is the same for a boss bomb or a destructible
+// barrel, and a second copy of it would drift from this one immediately.
+//
+// The fuse is the whole point. An instant explosion on death would punish the
+// player for a kill the auto-aim chose for them; a telegraphed one turns it into
+// a readable "back off now".
+export interface Blast {
+  id: number;
+  pos: Vec2;
+  radius: number;
+  damage: number;
+  fuse: number;      // seconds until detonation
+  maxFuse: number;   // for the telegraph ramp
+  hostile: boolean;  // true = hurts the player; false = hurts enemies
+  done: boolean;     // detonated; filtered out at the end of the tick
 }
 
 // ── Drops ──
-export type PickupKind = 'coin' | 'heart';
+export type PickupKind = 'coin' | 'heart' | 'gear';
 
 // A reward that pops out of a corpse and has to be walked over to be claimed.
 // Gold is no longer credited on kill — it's on the floor until you go get it,
@@ -160,6 +241,10 @@ export interface Pickup {
   life: number;     // seconds before it despawns
   magnet: boolean;  // latched onto the player and homing in
   bob: number;      // phase offset so a pile doesn't bob in lockstep
+
+  /** Which item this is, for 'gear' drops. Untyped here to keep engine/ free of
+   *  a systems/ import; the id is validated against the table when it's banked. */
+  gearId?: string;
 }
 
 // ── Presentation FX ──
@@ -215,7 +300,7 @@ export interface Door {
 }
 
 // ── Boss ──
-export type BossAttackId = 'radial' | 'volley' | 'charge';
+export type BossAttackId = 'radial' | 'volley' | 'charge' | 'bombs';
 export type BossState = 'intro' | 'idle' | 'windup' | 'attacking' | 'recover';
 
 export interface Boss {
@@ -235,6 +320,7 @@ export interface Boss {
   alive: boolean;
   status: Status;                    // burn / slow left on it by player shots
   dmgMult: number;                   // depth scaling applied to its attacks
+  variant: number;                   // index into CONFIG.boss.variants — which fight this is
 }
 
 // Live input written by the Joystick each frame.
@@ -254,10 +340,16 @@ export interface World {
   door: Door;
   obstacles: Obstacle[];           // cover for the current room
   pickups: Pickup[];               // dropped loot waiting to be collected
+  blasts: Blast[];                 // fuses burning down toward a detonation
   boss: Boss | null;
-  chest: Chest | null;             // set only in a chest room
+  shrines: Shrine[];               // set only in a reward room
   roomIndex: number;
   roomType: RoomType;
+
+  // Which chapter this run is playing, and whether it has an end at all.
+  // Endless reuses the deepest chapter's tables and simply never stops.
+  chapter: number;
+  endless: boolean;
   phase: RoomPhase;
 
   // Run + progression state.
@@ -266,6 +358,7 @@ export interface World {
   pendingDrafts: number;           // queued level-ups awaiting a pick
   enemiesKilled: number;
   runGold: number;                 // gold earned this run (banked at run end)
+  gearFound: string[];             // equipment picked up this run, awaiting banking
 
   fx: Fx;                          // cosmetic only — never read by game logic
   input: InputState;

@@ -2,14 +2,14 @@ import { CONFIG } from '../config';
 import { Enemy, EnemyKind, RoomType, World } from '../engine/types';
 import { Vec2, vec } from '../engine/vec';
 import { makeBoss, playBossIntro } from './boss';
-import { makeChest } from './chest';
+import { makeShrines } from './shrine';
 import { buildObstacles, resolveCircle } from './obstacles';
 import { makeFx } from './fx';
 import { makeStatus } from './status';
-import { enemyScale } from './difficulty';
+import { composeWave, enemyScale } from './difficulty';
 
 // Build a fresh world with the player centered, then load the first room.
-export function createWorld(w: number, h: number): World {
+export function createWorld(w: number, h: number, chapter = 0, endless = false): World {
   const pc = CONFIG.player;
   const world: World = {
     player: {
@@ -34,6 +34,21 @@ export function createWorld(w: number, h: number): World {
       burn: 0,
       frost: 0,
       stacks: {},
+      settleDelay: pc.settleDelay,
+      resist: 0,
+      shieldMax: 0,
+      shield: 0,
+      shieldTimer: 0,
+      thorns: 0,
+      focus: 0,
+      homing: 0,
+      detonate: 0,
+      lifesteal: 0,
+      goldBonus: 0,
+      magnetBonus: 0,
+      pattern: 'single',
+      burstLeft: 0,
+      burstTimer: 0,
       cooldown: 0,
       stillTime: 0,
       level: 1,
@@ -51,10 +66,14 @@ export function createWorld(w: number, h: number): World {
     },
     obstacles: [],
     pickups: [],
+    blasts: [],
+    gearFound: [],
     boss: null,
-    chest: null,
+    shrines: [],
     roomIndex: 0,
     roomType: 'combat',
+    chapter,
+    endless,
     phase: 'fighting',
     status: 'playing',
     draftOptions: [],
@@ -73,9 +92,60 @@ export function createWorld(w: number, h: number): World {
 }
 
 // Restart the run in place (keeps the same World reference the game loop holds).
-export function resetWorld(world: World) {
+export function resetWorld(world: World, chapter = 0, endless = false) {
   const { w, h } = world.bounds;
-  Object.assign(world, createWorld(w, h));
+  Object.assign(world, createWorld(w, h, chapter, endless));
+}
+
+// Re-fit the world to a new viewport.
+//
+// bounds was written once at createWorld and never again, while the renderer was
+// handed live dimensions — so any resize left the simulation playing on the old
+// arena. Bodies spawned outside the visible canvas, the door sat off-screen, and
+// restarting didn't help because resetWorld reuses bounds. Portrait lock covers
+// phones but not iPad Split View, Android free-form/foldables, or web.
+//
+// Positions scale proportionally rather than clamping: clamping stacks every
+// off-screen body onto the same edge, while scaling keeps the fight looking like
+// the fight the player was already in.
+export function resizeWorld(world: World, w: number, h: number) {
+  const { w: ow, h: oh } = world.bounds;
+  if (w <= 0 || h <= 0) return;
+  if (ow === w && oh === h) return;
+
+  const sx = w / ow;
+  const sy = h / oh;
+  const scale = (p: Vec2) => { p.x *= sx; p.y *= sy; };
+
+  world.bounds = { w, h };
+
+  scale(world.player.pos);
+  for (const e of world.enemies) scale(e.pos);
+  for (const p of world.projectiles) scale(p.pos);
+  for (const p of world.enemyProjectiles) scale(p.pos);
+  for (const p of world.pickups) scale(p.pos);
+  for (const p of world.fx.particles) scale(p.pos);
+  for (const n of world.fx.numbers) scale(n.pos);
+  if (world.boss) scale(world.boss.pos);
+  for (const s of world.shrines) scale(s.pos);
+
+  // The door is positioned from config, not scaled — it must stay reachable and
+  // centred whatever the aspect ratio does.
+  world.door.pos.x = w / 2;
+  world.door.pos.y = CONFIG.door.marginTop;
+
+  // Cover is authored as fractions of the arena, so it has to be rebuilt rather
+  // than scaled — a stretched layout would violate its own minimum lane widths.
+  world.obstacles = buildObstacles(
+    w, h, combatRoomsBefore(world.roomIndex), world.roomType !== 'combat'
+  );
+
+  // Rebuilt cover can land on top of a body, so put everything legal again.
+  resolveCircle(world.player.pos, world.player.radius, world.obstacles, world.bounds);
+  for (const e of world.enemies) resolveCircle(e.pos, e.radius, world.obstacles, world.bounds);
+  for (const p of world.pickups) resolveCircle(p.pos, CONFIG.pickups.radius, world.obstacles, world.bounds);
+  if (world.boss) resolveCircle(world.boss.pos, world.boss.radius, world.obstacles, world.bounds);
+  for (const s of world.shrines) resolveCircle(s.pos, s.radius, world.obstacles, world.bounds);
 }
 
 // Create one enemy of the given archetype at a position, scaled to run depth.
@@ -101,6 +171,8 @@ export function spawnEnemy(world: World, kind: EnemyKind, x: number, y: number):
     attackTimer: kind === 'shooter' ? Math.random() * 1.0 : 0,
     projectileDamage:
       kind === 'shooter' ? CONFIG.enemies.shooter.projectileDamage * s.damage : 0,
+    blastDamage:
+      kind === 'bomber' ? CONFIG.enemies.bomber.blastDamage * s.damage : 0,
     state: 'idle',
     stateTimer: 0,
     chargeDir: vec(0, 0),
@@ -147,16 +219,16 @@ function pushClearOfPlayer(pos: Vec2, radius: number, world: World) {
   pos.y = Math.max(radius, Math.min(h - radius, pos.y));
 }
 
-// The run's rhythm: a stretch of combat, a boss, then a chest room to spend the
+// The run's rhythm: a stretch of combat, a boss, then a reward room to spend the
 // win on before the next stretch starts.
 export function roomTypeFor(index: number): RoomType {
   if ((index + 1) % CONFIG.bossEvery === 0) return 'boss';
-  if (index > 0 && index % CONFIG.bossEvery === 0) return 'chest'; // straight after a boss
+  if (index > 0 && index % CONFIG.bossEvery === 0) return 'reward'; // straight after a boss
   return 'combat';
 }
 
 // Wave and cover tables are indexed by *combat* room, not by raw room index —
-// counting the boss and chest rooms would permanently skip whichever table
+// counting the boss and reward rooms would permanently skip whichever table
 // entries line up with them. Counted rather than derived, so it stays correct
 // if the schedule above changes.
 function combatRoomsBefore(index: number): number {
@@ -169,18 +241,33 @@ function combatRoomsBefore(index: number): number {
 // and lock the door.
 export function loadRoom(world: World, index: number) {
   const { w, h } = world.bounds;
-  const rooms = CONFIG.rooms;
+
+  // The room being loaded IS the room we're in. This used to be the caller's
+  // job, so `world.roomIndex` and the index actually loaded were kept in step by
+  // convention — and everything that reads depth (difficulty scaling, drop
+  // rarity, "is this the last room of the chapter") trusted the field, not the
+  // argument. One caller forgetting is a run that silently plays the wrong room.
+  world.roomIndex = index;
 
   const type = roomTypeFor(index);
   const combatIndex = combatRoomsBefore(index);
-  const spec = rooms[combatIndex % rooms.length]; // loop waves once past the last
 
   world.enemies = [];
   world.projectiles = [];
   world.enemyProjectiles = [];
-  world.pickups = []; // anything not collected before the door is forfeit
+  // Equipment is never forfeited. Coins and hearts left on the floor are a real
+  // choice — go back for them or move on — but walking out of a boss room a
+  // second before a legendary reached you would be a story about the game
+  // cheating, not a decision. Anything still lying there is claimed on the way
+  // through the door.
+  for (const p of world.pickups) {
+    if (p.kind === 'gear' && p.gearId) world.gearFound.push(p.gearId);
+  }
+
+  world.pickups = []; // coins and hearts left behind ARE forfeit
+  world.blasts = [];  // a burning fuse does not follow the player through the door
   world.boss = null;
-  world.chest = null;
+  world.shrines = [];
   world.roomType = type;
   world.phase = 'fighting';
   world.door.open = false;
@@ -194,30 +281,24 @@ export function loadRoom(world: World, index: number) {
   world.player.pos.y = h * 0.7;
   resolveCircle(world.player.pos, world.player.radius, world.obstacles, world.bounds);
 
-  if (type === 'chest') {
-    world.chest = makeChest(w, h);
-    resolveCircle(world.chest.pos, world.chest.radius, world.obstacles, world.bounds);
+  if (type === 'reward') {
+    world.shrines = makeShrines(world, w, h);
+    for (const s of world.shrines) {
+      resolveCircle(s.pos, s.radius, world.obstacles, world.bounds);
+    }
     return;
   }
 
   if (type === 'boss') {
-    world.boss = makeBoss(w, h, index);
+    // One boss archetype per chapter, so the fight is the chapter's identity.
+    world.boss = makeBoss(w, h, index, CONFIG.chapters[world.chapter % CONFIG.chapters.length].boss);
     playBossIntro();
     resolveCircle(world.boss.pos, world.boss.radius, world.obstacles, world.bounds);
     return;
   }
 
-  // Flatten {kind,count} into a spawn list and place them in a ring.
-  const toSpawn: EnemyKind[] = [];
-  for (const entry of spec) {
-    for (let i = 0; i < entry.count; i++) toSpawn.push(entry.kind);
-  }
-
-  // Thicken the wave with depth. Drawn from the room's own composition so the
-  // extras reinforce whatever that room is about rather than diluting it.
-  const d = CONFIG.difficulty;
-  const extras = Math.min(d.maxExtraEnemies, Math.floor(index / d.extraEnemyEveryRooms));
-  for (let i = 0; i < extras; i++) toSpawn.push(spec[i % spec.length].kind);
+  // What this room is made of — authored for the opening, budget-composed after.
+  const toSpawn = composeWave(index, combatIndex);
 
   toSpawn.forEach((kind, i) => {
     const angle = (i / toSpawn.length) * Math.PI * 2 - Math.PI / 2;

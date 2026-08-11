@@ -1,6 +1,9 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Status, World } from '../engine/types';
+import { useFrameTick } from '../hooks/useGameLoop';
+import { bossPhases } from '../systems/boss';
+import { shrineColor } from '../systems/shrine';
 import { CONFIG } from '../config';
 
 // Outline color for a body carrying a debuff — burn reads over slow, since it's
@@ -20,6 +23,10 @@ function statusTint(s: Status): string | null {
 // draws the whole frame in one canvas instead of a few hundred Views, but needs
 // a development build. Swap the import in App.tsx to use it.
 export function GameCanvas({ world }: { world: World; width: number; height: number }) {
+  // Same contract as the Skia renderer: the canvas asks the loop for its own
+  // repaint rather than riding a re-render of the whole app.
+  useFrameTick(60);
+
   const { player, enemies, projectiles, enemyProjectiles, door, obstacles, pickups, fx } = world;
   const pr = CONFIG.pickups.radius;
 
@@ -72,43 +79,53 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
       {pickups.map((p) => {
         const bob = Math.sin(p.bob) * CONFIG.pickups.bobAmp;
         const heart = p.kind === 'heart';
+        const gear = p.kind === 'gear';
+        // Equipment is bigger and rimmed white — the only pickup that isn't a
+        // resource, so it has to read as "go and get that" across the arena.
+        const r = gear ? pr * 1.5 : pr;
         return (
           <View
             key={p.id}
             style={{
               position: 'absolute',
-              left: p.pos.x - pr,
-              top: p.pos.y - pr + bob,
-              width: pr * 2,
-              height: pr * 2,
-              borderRadius: heart ? 4 : pr,
-              backgroundColor: heart ? '#ef4444' : '#ffd45e',
-              borderWidth: 2,
-              borderColor: heart ? '#ff9d9d' : '#a87b1c',
+              left: p.pos.x - r,
+              top: p.pos.y - r + bob,
+              width: r * 2,
+              height: r * 2,
+              borderRadius: gear ? 5 : heart ? 4 : r,
+              backgroundColor: gear ? '#8b5cf6' : heart ? '#ef4444' : '#ffd45e',
+              borderWidth: gear ? 3 : 2,
+              borderColor: gear ? '#ffe9a8' : heart ? '#ff9d9d' : '#a87b1c',
               // Fade out over the last couple of seconds before it despawns.
+              // Gear never despawns, so its life is Infinity and this is 1.
               opacity: Math.min(1, p.life / 2),
-              transform: heart ? [{ rotate: '45deg' }] : undefined,
+              transform: heart || gear ? [{ rotate: '45deg' }] : undefined,
             }}
           />
         );
       })}
 
-      {/* Chest — gold and shut, dark and open once claimed */}
-      {world.chest && (
-        <View
-          style={{
-            position: 'absolute',
-            left: world.chest.pos.x - world.chest.radius,
-            top: world.chest.pos.y - world.chest.radius,
-            width: world.chest.radius * 2,
-            height: world.chest.radius * 2,
-            borderRadius: 6,
-            backgroundColor: world.chest.opened ? '#4a3a1a' : '#e0a92c',
-            borderWidth: 3,
-            borderColor: world.chest.opened ? '#6b5426' : '#fff0b8',
-          }}
-        />
-      )}
+      {/* Shrines — three offers, one pick. The losers fade rather than vanish. */}
+      {world.shrines.map((s) => {
+        const affordable = s.goldCost <= world.runGold;
+        return (
+          <View
+            key={s.id}
+            style={{
+              position: 'absolute',
+              left: s.pos.x - s.radius,
+              top: s.pos.y - s.radius,
+              width: s.radius * 2,
+              height: s.radius * 2,
+              borderRadius: 6,
+              backgroundColor: s.claimed ? '#4a3a1a' : shrineColor(s.kind),
+              borderWidth: 3,
+              borderColor: s.claimed ? '#6b5426' : '#ffffff',
+              opacity: (s.dissolving ? 0.22 : 1) * (affordable ? 1 : 0.45),
+            }}
+          />
+        );
+      })}
 
       {/* Boss */}
       {world.boss && world.boss.alive && (
@@ -138,7 +155,7 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
               borderRadius: 10,
               // Blown out to white for a few frames after every hit.
               backgroundColor:
-                world.boss.hitFlash > 0 ? '#ffffff' : CONFIG.boss.phases[world.boss.phase].color,
+                world.boss.hitFlash > 0 ? '#ffffff' : bossPhases(world.boss)[world.boss.phase].color,
               borderWidth: statusTint(world.boss.status) ? 4 : 0,
               borderColor: statusTint(world.boss.status) ?? undefined,
             }}
@@ -146,12 +163,38 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
         </>
       )}
 
+      {/* blast telegraphs — under the actors so bodies stay readable on top */}
+      {world.blasts.map((b) => {
+        const t = 1 - Math.max(0, b.fuse / b.maxFuse);
+        return (
+          <View
+            key={`blast${b.id}`}
+            style={{
+              position: 'absolute',
+              left: b.pos.x - b.radius,
+              top: b.pos.y - b.radius,
+              width: b.radius * 2,
+              height: b.radius * 2,
+              borderRadius: b.radius,
+              backgroundColor: CONFIG.blast.color,
+              opacity: 0.13 + 0.3 * t,
+              borderWidth: 2 + 3 * t,
+              borderColor: '#ffd7b0',
+            }}
+          />
+        );
+      })}
+
       {enemies.map((e) => {
         const tint = statusTint(e.status);
+        // A lit bomber flashes so the thing about to explode is the loudest
+        // object on screen.
+        const lit = e.kind === 'bomber' && e.state === 'windup' &&
+          Math.floor(e.stateTimer * 12) % 2 === 0;
         return (
         <React.Fragment key={e.id}>
-          {/* charger telegraph: white ring while winding up */}
-          {e.kind === 'charger' && e.state === 'windup' && (
+          {/* charger / bomber telegraph: white ring while winding up */}
+          {(e.kind === 'charger' || e.kind === 'bomber') && e.state === 'windup' && (
             <View
               style={{
                 position: 'absolute',
@@ -173,8 +216,8 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
               top: e.pos.y - e.radius,
               width: e.radius * 2,
               height: e.radius * 2,
-              backgroundColor: e.hitFlash > 0 ? '#ffffff' : e.color,
-              borderRadius: e.kind === 'shooter' ? e.radius : 4,
+              backgroundColor: e.hitFlash > 0 ? '#ffffff' : lit ? CONFIG.blast.color : e.color,
+              borderRadius: e.kind === 'shooter' || e.kind === 'bomber' ? e.radius : 4,
               borderWidth: tint ? 3 : 0,
               borderColor: tint ?? undefined,
             }}

@@ -9,6 +9,8 @@ import {
 
 import { CONFIG } from '../config';
 import { Status, World } from '../engine/types';
+import { bossPhases } from '../systems/boss';
+import { shrineColor } from '../systems/shrine';
 
 // Outline color for a body carrying a debuff — burn reads over slow, since it's
 // the one actively killing. Returns null when the body is clean.
@@ -131,7 +133,21 @@ export function drawScene(canvas: SkCanvas, world: World, width: number, height:
     // Fade out over the last couple of seconds before it despawns.
     const alpha = Math.min(1, p.life / 2);
 
-    if (p.kind === 'heart') {
+    if (p.kind === 'gear') {
+      // A rotating diamond with a bright rim: the only pickup that isn't a
+      // resource, so it has to read as "go and get that" from across the arena.
+      const r = pr * 1.5;
+      canvas.save();
+      canvas.translate(cx, cy);
+      canvas.rotate((p.bob * 40) % 360, 0, 0);
+      fill('#ffe9a8', alpha);
+      roundRect(canvas, -r, -r, r * 2, r * 2, 5);
+      fill('#8b5cf6', alpha);
+      roundRect(canvas, -r + 3, -r + 3, r * 2 - 6, r * 2 - 6, 4);
+      canvas.restore();
+      stroke('#ffffff', 2, alpha * 0.8);
+      canvas.drawCircle(cx, cy, r + 5, strokePaint);
+    } else if (p.kind === 'heart') {
       // Rotated square, matching the old View's 45deg transform.
       canvas.save();
       canvas.translate(cx, cy);
@@ -149,14 +165,29 @@ export function drawScene(canvas: SkCanvas, world: World, width: number, height:
     }
   }
 
-  // ── Chest — gold and shut, dark and open once claimed ──
-  if (world.chest) {
-    const c = world.chest;
-    const r = c.radius;
-    fill(c.opened ? '#4a3a1a' : '#e0a92c');
-    roundRect(canvas, c.pos.x - r, c.pos.y - r, r * 2, r * 2, 6);
-    stroke(c.opened ? '#6b5426' : '#fff0b8', 3);
-    strokeRoundRect(canvas, c.pos.x - r + 1.5, c.pos.y - r + 1.5, r * 2 - 3, r * 2 - 3, 5);
+  // ── Shrines — three offers, one pick ──
+  // The one taken stays lit; the others fade out, so the moment of choosing is
+  // visible rather than the losers simply vanishing between frames.
+  for (const s of world.shrines) {
+    const r = s.radius;
+    const tint = shrineColor(s.kind);
+    const alpha = s.dissolving ? 0.22 : 1;
+    const affordable = s.goldCost <= world.runGold;
+
+    fill(s.claimed ? '#4a3a1a' : tint, affordable ? alpha : alpha * 0.45);
+    roundRect(canvas, s.pos.x - r, s.pos.y - r, r * 2, r * 2, 6);
+    stroke(s.claimed ? '#6b5426' : '#ffffff', 3, alpha);
+    strokeRoundRect(canvas, s.pos.x - r + 1.5, s.pos.y - r + 1.5, r * 2 - 3, r * 2 - 3, 5);
+
+    // Price tag: gold under a forge, a heart-cost under a pact.
+    if (!s.claimed && !s.dissolving && (s.goldCost > 0 || s.hpCostFrac > 0)) {
+      const label = s.goldCost > 0
+        ? `${s.goldCost}`
+        : `-${Math.round(s.hpCostFrac * 100)}%`;
+      const f = font(13);
+      fill(s.goldCost > 0 && !affordable ? '#ff6b6b' : '#ffffff', alpha);
+      canvas.drawText(label, s.pos.x - f.measureText(label).width / 2, s.pos.y + r + 16, fillPaint, f);
+    }
   }
 
   // ── Boss ──
@@ -167,7 +198,7 @@ export function drawScene(canvas: SkCanvas, world: World, width: number, height:
       canvas.drawCircle(b.pos.x, b.pos.y, b.radius + 10, strokePaint);
     }
     // Blown out to white for a few frames after every hit.
-    fill(b.hitFlash > 0 ? '#ffffff' : CONFIG.boss.phases[b.phase].color);
+    fill(b.hitFlash > 0 ? '#ffffff' : bossPhases(b)[b.phase].color);
     roundRect(canvas, b.pos.x - b.radius, b.pos.y - b.radius, b.radius * 2, b.radius * 2, 10);
 
     const tint = statusTint(b.status);
@@ -179,15 +210,31 @@ export function drawScene(canvas: SkCanvas, world: World, width: number, height:
     }
   }
 
+  // ── Blast telegraphs — under the actors, so bodies stay readable on top ──
+  // The ring closes in on the radius it will actually hit, which is the only
+  // honest way to draw a countdown: what you see is where the damage lands.
+  for (const b of world.blasts) {
+    const t = 1 - Math.max(0, b.fuse / b.maxFuse); // 0 at spawn, 1 at detonation
+    fill(CONFIG.blast.color, 0.13 + 0.22 * t);
+    canvas.drawCircle(b.pos.x, b.pos.y, b.radius, fillPaint);
+    stroke(CONFIG.blast.color, 2 + 3 * t, 0.5 + 0.5 * t);
+    canvas.drawCircle(b.pos.x, b.pos.y, b.radius * (0.25 + 0.75 * t), strokePaint);
+  }
+
   // ── Enemies ──
   for (const e of enemies) {
-    if (e.kind === 'charger' && e.state === 'windup') {
+    if ((e.kind === 'charger' || e.kind === 'bomber') && e.state === 'windup') {
       stroke('#ffffff', 3);
       canvas.drawCircle(e.pos.x, e.pos.y, e.radius + 6, strokePaint);
     }
 
-    fill(e.hitFlash > 0 ? '#ffffff' : e.color);
-    if (e.kind === 'shooter') {
+    // A lit bomber flashes between its own colour and the blast colour, so the
+    // thing about to explode is the loudest object on screen.
+    const lit = e.kind === 'bomber' && e.state === 'windup' &&
+      Math.floor(e.stateTimer * 12) % 2 === 0;
+
+    fill(e.hitFlash > 0 ? '#ffffff' : lit ? CONFIG.blast.color : e.color);
+    if (e.kind === 'shooter' || e.kind === 'bomber') {
       canvas.drawCircle(e.pos.x, e.pos.y, e.radius, fillPaint);
     } else {
       roundRect(canvas, e.pos.x - e.radius, e.pos.y - e.radius, e.radius * 2, e.radius * 2, 4);
@@ -196,7 +243,7 @@ export function drawScene(canvas: SkCanvas, world: World, width: number, height:
     const tint = statusTint(e.status);
     if (tint) {
       stroke(tint, 3);
-      if (e.kind === 'shooter') {
+      if (e.kind === 'shooter' || e.kind === 'bomber') {
         canvas.drawCircle(e.pos.x, e.pos.y, e.radius - 1.5, strokePaint);
       } else {
         strokeRoundRect(
@@ -222,6 +269,12 @@ export function drawScene(canvas: SkCanvas, world: World, width: number, height:
   for (const p of projectiles) canvas.drawCircle(p.pos.x, p.pos.y, p.radius, fillPaint);
 
   // ── Player ──
+  // Shield reads as a ring around the hero that thins as it is spent, so the
+  // buffer is visible without another bar competing with the HUD.
+  if (player.shieldMax > 0 && player.shield > 0) {
+    stroke('#60a5fa', 2 + 3 * (player.shield / player.shieldMax), 0.85);
+    canvas.drawCircle(player.pos.x, player.pos.y, player.radius + 6, strokePaint);
+  }
   fill('#3ecf5f');
   canvas.drawCircle(player.pos.x, player.pos.y, player.radius, fillPaint);
   fill('#0b3d1e');

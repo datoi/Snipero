@@ -6,7 +6,9 @@ import { updateBoss } from './boss';
 import { updateRooms } from './rooms';
 import { updateFx } from './fx';
 import { updatePickups } from './pickups';
-import { updateChest } from './chest';
+import { updateShrines } from './shrine';
+import { updatePlayerDefense } from './playerDamage';
+import { updateBlasts } from './blast';
 import { updateStatus } from './status';
 
 // The per-frame tick. When the run is paused (drafting a card) or over (dead),
@@ -24,10 +26,12 @@ export function updateWorld(world: World, dt: number) {
   updateCombat(world, dt);       // may enter 'drafting' on level-up
   updateProjectiles(world, dt);  // applies burn/slow on hit
   updateStatus(world, dt);       // burn ticks + slow decay — before movement reads it
+  updatePlayerDefense(world, dt); // shield refills once out of combat
   updateEnemies(world, dt);
   updateBoss(world, dt);         // boss state machine + attacks (if a boss room)
   updateEnemyProjectiles(world, dt);
-  updateChest(world, dt);        // chest room: walk in, open, pay out
+  updateBlasts(world, dt);       // detonations resolve before the room-clear check
+  updateShrines(world, dt);      // reward room: pick one of three offers
   updatePickups(world, dt);      // loot pop, magnet, collection
   updateRooms(world);            // room-clear → door → next room
 

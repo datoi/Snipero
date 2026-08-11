@@ -20,7 +20,13 @@ function addXp(world: World, amount: number) {
   while (p.xp >= p.xpToNext) {
     p.xp -= p.xpToNext;
     p.level += 1;
-    p.xpToNext = Math.round(p.xpToNext * 1.3); // rising curve
+    // Never let a level cost the same as the one before it. Rounding a
+    // compounding value can return the value itself at a small enough base
+    // (round(1 * 1.12) === 1), which freezes the curve and makes every
+    // subsequent level free — an infinite draft from one kill. Current tuning is
+    // nowhere near that, but the failure is silent and total, so it's cheaper to
+    // make it impossible than to remember the constraint when retuning.
+    p.xpToNext = Math.max(p.xpToNext + 1, Math.round(p.xpToNext * CONFIG.progression.xpGrowth));
     leveled += 1;
   }
 
@@ -30,6 +36,24 @@ function addXp(world: World, amount: number) {
     world.pendingDrafts += leveled;
     if (world.status === 'playing') enterDraft(world);
   }
+}
+
+// Put the run down mid-room, and pick it back up.
+//
+// The draft overlay used to be the only thing that stopped the clock, so there
+// was no safe way to put the phone down: walking away mid-room meant coming back
+// to a corpse. Pausing clears the stick for the same reason entering a draft
+// does — the overlay takes the screen, so the release event never arrives.
+export function pauseRun(world: World) {
+  if (world.status !== 'playing') return;
+  world.status = 'paused';
+  clearInput(world);
+}
+
+export function resumeRun(world: World) {
+  if (world.status !== 'paused') return;
+  world.status = 'playing';
+  clearInput(world); // don't resume walking on a stick the player isn't holding
 }
 
 // Pause the run and offer three cards.

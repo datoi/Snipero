@@ -3,18 +3,18 @@ import { StyleSheet } from 'react-native';
 import { Canvas, Picture, createPicture } from '@shopify/react-native-skia';
 
 import { World } from '../engine/types';
+import { useFrameTick } from '../hooks/useGameLoop';
 import { drawScene } from './drawScene';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// INACTIVE — requires a development build. Skia is a native module and is not
-// bundled in Expo Go, so importing this file from an Expo Go run crashes at
-// startup. Nothing imports it today, and Metro only bundles what's reachable
-// from the entry point, so it costs an Expo Go build exactly nothing.
+// ACTIVE renderer. Requires a development build — Skia is a native module and is
+// not bundled in Expo Go, so `expo start` against Expo Go will not run this.
+// Use the `development` profile in eas.json.
 //
-// To switch to it, change the import in App.tsx:
+// To fall back to the Expo Go renderer, change the import in App.tsx:
 //   import { GameCanvas } from './src/render/GameCanvas';       // Views, Expo Go
 //   import { GameCanvas } from './src/render/GameCanvasSkia';   // Skia, dev build
-// The prop contract is identical.
+// The prop contract is identical and both drive their own repaint.
 // ─────────────────────────────────────────────────────────────────────────────
 //
 // Why this exists: the View renderer rebuilds a tree of RN Views — one per
@@ -32,6 +32,11 @@ export function GameCanvas({
   width: number;
   height: number;
 }) {
+  // The canvas drives its own repaint straight off the loop, so showing live
+  // simulation state costs a re-render of this leaf and nothing else. The scene
+  // graph underneath is a single Picture node either way.
+  useFrameTick(60);
+
   const picture = createPicture(
     (canvas) => drawScene(canvas, world, width, height),
     { x: 0, y: 0, width, height } // explicit bounds let Skia cull off-screen ops

@@ -1,13 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import {
+  AppState, Pressable, StyleSheet, Text, View, useWindowDimensions,
+} from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
-import { createWorld, resetWorld } from './src/systems/world';
-import { useGameLoop } from './src/hooks/useGameLoop';
-import { GameCanvas } from './src/render/GameCanvas';
+import { createWorld, resetWorld, resizeWorld } from './src/systems/world';
+import { useGameLoop, useWorldValue } from './src/hooks/useGameLoop';
+// Skia renderer — needs a development build (see GameCanvasSkia.tsx). Swap to
+// './src/render/GameCanvas' for the RN-Views fallback that runs in Expo Go.
+import { GameCanvas } from './src/render/GameCanvasSkia';
+import { Hud } from './src/ui/Hud';
 import { Joystick } from './src/input/Joystick';
 import { RARITY_COLOR, getAbility, stacksOf } from './src/systems/abilities';
-import { chooseAbility } from './src/systems/progression';
+import { chooseAbility, pauseRun, resumeRun } from './src/systems/progression';
 import { MetaMenu } from './src/ui/MetaMenu';
 import {
   MetaState,
@@ -15,12 +20,21 @@ import {
   applyMeta,
   buyUpgrade,
   defaultMeta,
+  equipGear,
+  grantGear,
   loadMeta,
   saveMeta,
+  selectHero,
+  unlockGear,
+  unlockHero,
+  upgradeGear,
+  upgradeHero,
 } from './src/systems/meta';
+import { GearDef } from './src/systems/gear';
+import { HeroDef } from './src/systems/heroes';
 import { Vec2 } from './src/engine/vec';
 import { World } from './src/engine/types';
-import { enemyScale } from './src/systems/difficulty';
+import { CONFIG } from './src/config';
 import { setMuted, startAudio, stopAudio } from './src/audio/AudioEngine';
 
 type Screen = 'home' | 'game';
@@ -38,15 +52,28 @@ export default function App() {
   const world = worldRef.current;
 
   const runningRef = useRef(false);
-  const bankedRef = useRef(false); // ensures each run's gold is banked exactly once
+  const bankedRef = useRef(0); // gold already transferred out of this run
 
   const [screen, setScreen] = useState<Screen>('home');
   const [meta, setMeta] = useState<MetaState>(defaultMeta());
+  const [metaLoaded, setMetaLoaded] = useState(false);
 
-  // Load persisted meta once at startup.
+  // Load persisted meta once at startup. Until this resolves the menu shows a
+  // loading state rather than a Start button: starting a run against the default
+  // meta would silently drop every permanent upgrade the player has bought, and
+  // dying in that window would then bank `defaultGold + earned` over the real
+  // total — losing the bank to a race the player can't see.
   useEffect(() => {
-    loadMeta().then(setMeta);
+    loadMeta().then((m) => {
+      setMeta(m);
+      setMetaLoaded(true);
+    });
   }, []);
+
+  // Keep the simulation on the same arena the renderer is drawing.
+  useEffect(() => {
+    resizeWorld(world, width, height);
+  }, [world, width, height]);
 
   // Bring the audio engine up once, and tear it down on unmount so the native
   // players are released rather than leaked across a reload.
@@ -64,27 +91,98 @@ export default function App() {
   runningRef.current = screen === 'game';
   useGameLoop(world, runningRef);
 
+  // App itself no longer re-renders per frame — the canvas and the HUD each
+  // subscribe to the loop at their own cadence. These two are the only pieces of
+  // world state the shell reacts to: the run status, and the identity of the
+  // current draft hand (a fresh array every roll, so a queued second level-up
+  // swaps the cards without the status ever leaving 'drafting').
+  const status = useWorldValue(() => world.status);
+  const draftOptions = useWorldValue(() => world.draftOptions);
+  const roomIndex = useWorldValue(() => world.roomIndex);
+
   const player = world.player;
 
-  // Bank the run's gold once, the moment the player dies.
-  useEffect(() => {
-    if (screen === 'game' && world.status === 'dead' && !bankedRef.current) {
-      bankedRef.current = true;
-      const earned = world.runGold;
-      setMeta((prev) => {
-        const next = { ...prev, gold: prev.gold + earned };
-        saveMeta(next);
-        return next;
-      });
-    }
-  }, [screen, world.status]);
+  // Bank whatever the run has earned but not yet handed over.
+  //
+  // Gold used to bank only on death, so backgrounding the app or having it
+  // killed mid-run threw away everything earned that run — the one outcome a
+  // player will not forgive. Banking on every room transition means the most
+  // that can ever be lost is the room currently being fought.
+  // The ledger is symmetric: `bankedRef` records what the wallet has already
+  // been told about, and the difference is settled in EITHER direction.
+  //
+  // It used to only ever rise, which quietly made the Forge free. Banking keys
+  // on roomIndex and loadRoom advances that on the way *into* a reward room, so
+  // the bank always fires before the player can reach a shrine — then the Forge
+  // decremented world.runGold, the next diff came out negative, and the early
+  // return threw the spend away. The player kept gold they had spent, and the
+  // one card whose entire job is giving run gold a use during the run cost
+  // nothing at all.
+  const bankRunGold = React.useCallback(() => {
+    const delta = world.runGold - bankedRef.current;
+    // Gear is drained rather than diffed: it's a list, not a running total, and
+    // taking it off the world is what makes banking it idempotent.
+    const foundGear = world.gearFound.splice(0);
+    if (delta === 0 && foundGear.length === 0) return;
 
-  const startRun = () => {
-    resetWorld(world);
-    applyMeta(world.player, meta); // apply permanent upgrades to the fresh player
-    bankedRef.current = false;
+    bankedRef.current = world.runGold;
+    setMeta((prev) => {
+      // Math.max guards the wallet against ever going negative, which the spend
+      // rules should already prevent — a shrine refuses anything unaffordable —
+      // but a wallet is not the place to find out a rule was wrong.
+      let next = delta !== 0
+        ? { ...prev, gold: Math.max(0, prev.gold + delta) }
+        : prev;
+      for (const id of foundGear) next = grantGear(next, id);
+      if (next !== prev) saveMeta(next);
+      return next;
+    });
+  }, [world]);
+
+  // Room cleared and walked out of — bank the takings.
+  useEffect(() => {
+    if (screen === 'game') bankRunGold();
+  }, [screen, roomIndex, bankRunGold]);
+
+  // Death banks the final room's share.
+  useEffect(() => {
+    if (screen === 'game' && status === 'dead') bankRunGold();
+  }, [screen, status, bankRunGold]);
+
+  // Leaving the app is the other way a run ends without a death screen. Pause
+  // as well as bank: coming back to a phone that has been simulating the whole
+  // time you were in another app is its own way to lose a run.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') {
+        bankRunGold();
+        pauseRun(world);
+      }
+    });
+    return () => sub.remove();
+  }, [bankRunGold, world]);
+
+  const startRun = (chapter: number, endless: boolean) => {
+    resetWorld(world, chapter, endless);
+    applyMeta(world.player, meta); // gear + talents onto the fresh player
+    bankedRef.current = 0;
     setScreen('game');
   };
+
+  // Beating a chapter unlocks the next one. Guarded on the chapter actually
+  // being the frontier so replaying an old chapter can't push the counter past
+  // what's been earned, and endless never counts at all.
+  useEffect(() => {
+    if (screen !== 'game' || status !== 'won') return;
+    bankRunGold();
+    if (world.endless) return;
+    setMeta((prev) => {
+      if (world.chapter !== prev.chaptersCleared) return prev;
+      const next = { ...prev, chaptersCleared: prev.chaptersCleared + 1 };
+      saveMeta(next);
+      return next;
+    });
+  }, [screen, status, bankRunGold, world]);
 
   const handleBuy = (id: UpgradeId) => {
     setMeta((prev) => {
@@ -93,6 +191,44 @@ export default function App() {
       return next;
     });
   };
+
+  // Gear actions all share the same shape: hand the current meta to a pure
+  // transform, persist only if it actually changed. The transforms already
+  // refuse anything unaffordable, so the UI never has to guard twice.
+  const heroAction = (fn: (m: MetaState, d: HeroDef) => MetaState) => (def: HeroDef) => {
+    setMeta((prev) => {
+      const next = fn(prev, def);
+      if (next !== prev) saveMeta(next);
+      return next;
+    });
+  };
+
+  const gearAction = (fn: (m: MetaState, d: GearDef) => MetaState) => (def: GearDef) => {
+    setMeta((prev) => {
+      const next = fn(prev, def);
+      if (next !== prev) saveMeta(next);
+      return next;
+    });
+  };
+
+  const heroHandlers = React.useMemo(
+    () => ({
+      onUnlock: heroAction(unlockHero),
+      onUpgrade: heroAction(upgradeHero),
+      onSelect: heroAction(selectHero),
+    }),
+    [] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  const gearHandlers = React.useMemo(
+    () => ({
+      onUnlock: gearAction(unlockGear),
+      onUpgrade: gearAction(upgradeGear),
+      onEquip: gearAction(equipGear),
+    }),
+    // gearAction closes over setMeta only, which is stable.
+    [] // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   const handleInput = (axis: Vec2, moving: boolean) => {
     world.input.axis = axis;
@@ -111,7 +247,14 @@ export default function App() {
   if (screen === 'home') {
     return (
       <View style={styles.root}>
-        <MetaMenu meta={meta} onBuy={handleBuy} onStart={startRun} />
+        <MetaMenu
+          meta={meta}
+          onBuy={handleBuy}
+          onStart={startRun}
+          ready={metaLoaded}
+          gear={gearHandlers}
+          heroes={heroHandlers}
+        />
         <Pressable style={styles.muteBtn} onPress={toggleMute} hitSlop={12}>
           <Text style={styles.muteText}>{meta.muted ? '🔇' : '🔊'}</Text>
         </Pressable>
@@ -121,63 +264,30 @@ export default function App() {
   }
 
   // ── In-run ──
-  const xpPct = Math.max(0, Math.min(1, player.xp / player.xpToNext));
-  // Enemy HP multiplier for this depth — the player should be able to see the
-  // run getting harder, not just feel their damage stop being enough.
-  const threat = enemyScale(world.roomIndex).hp;
-
   return (
     <View style={styles.root}>
       <GameCanvas world={world} width={width} height={height} />
 
-      {/* HUD */}
-      <View style={styles.hud} pointerEvents="none">
-        <Text style={styles.hudText}>HP {Math.ceil(player.hp)} / {player.maxHp}</Text>
-        <Text style={styles.hudSub}>
-          Room {world.roomIndex + 1}  ·  Lv {player.level}  ·  🪙 {world.runGold}
-          {threat > 1 && <Text style={styles.threat}>  ·  ×{threat.toFixed(1)} threat</Text>}
-        </Text>
-        <View style={styles.xpTrack}>
-          <View style={[styles.xpFill, { width: `${xpPct * 100}%` }]} />
-        </View>
-      </View>
+      <Hud world={world} />
 
-      {/* Boss health bar */}
-      {world.boss && (
-        <View style={styles.bossBarWrap} pointerEvents="none">
-          <Text style={styles.bossLabel}>BOSS</Text>
-          <View style={styles.bossTrack}>
-            <View
-              style={[styles.bossFill, { width: `${Math.max(0, (world.boss.hp / world.boss.maxHp) * 100)}%` }]}
-            />
-          </View>
-        </View>
-      )}
-
-      {/* Room prompt — the chest is the point of a chest room, so it takes
-          priority over the generic "go through the door" line. */}
-      {world.status === 'playing' && world.phase === 'cleared' && (
-        <View style={styles.banner} pointerEvents="none">
-          <Text style={styles.bannerText}>
-            {world.chest && !world.chest.paid
-              ? 'Treasure room — walk into the chest'
-              : 'Room cleared — go through the door ↑'}
-          </Text>
-        </View>
+      {status === 'playing' && (
+        <Pressable style={styles.pauseBtn} onPress={() => pauseRun(world)} hitSlop={12}>
+          <Text style={styles.pauseIcon}>❚❚</Text>
+        </Pressable>
       )}
 
       {/* Always mounted, disabled while an overlay owns the screen — unmounting
           it mid-gesture is what used to strand the last held direction. */}
-      <Joystick onChange={handleInput} enabled={world.status === 'playing'} />
+      <Joystick onChange={handleInput} enabled={status === 'playing'} />
 
       {/* Overlays below are rendered after the stick, so they take the touches. */}
 
       {/* Level-up card draft */}
-      {world.status === 'drafting' && (
+      {status === 'drafting' && (
         <View style={styles.overlay}>
           <Text style={styles.overlayTitle}>Level Up!</Text>
           <Text style={styles.overlaySub}>Choose one</Text>
-          {world.draftOptions.map((id) => {
+          {draftOptions.map((id) => {
             const a = getAbility(id);
             const owned = stacksOf(player, id);
             // The border carries rarity, the chip carries the card's own color.
@@ -208,8 +318,44 @@ export default function App() {
         </View>
       )}
 
+      {/* Paused */}
+      {status === 'paused' && (
+        <View style={styles.overlay}>
+          <Text style={styles.overlayTitle}>Paused</Text>
+          <Text style={styles.overlaySub}>Room {world.roomIndex + 1}  ·  🪙 {world.runGold} banked</Text>
+          <View style={styles.btnRow}>
+            <Pressable
+              style={[styles.endBtn, styles.menuBtn]}
+              onPress={() => { bankRunGold(); setScreen('home'); }}
+            >
+              <Text style={styles.menuText}>Quit run</Text>
+            </Pressable>
+            <Pressable style={[styles.endBtn, styles.againBtn]} onPress={() => resumeRun(world)}>
+              <Text style={styles.againText}>Resume</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {/* Chapter cleared — the only ending that isn't a death */}
+      {status === 'won' && (
+        <View style={styles.overlay}>
+          <Text style={styles.wonTitle}>Chapter Clear!</Text>
+          <Text style={styles.stat}>
+            {CONFIG.chapters[world.chapter % CONFIG.chapters.length].title}
+          </Text>
+          <Text style={styles.stat}>Enemies slain: {world.enemiesKilled}</Text>
+          <Text style={styles.goldEarned}>🪙 {world.runGold} earned</Text>
+          <View style={styles.btnRow}>
+            <Pressable style={[styles.endBtn, styles.againBtn]} onPress={() => setScreen('home')}>
+              <Text style={styles.againText}>Continue</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
       {/* Death / run-end screen */}
-      {world.status === 'dead' && (
+      {status === 'dead' && (
         <View style={styles.overlay}>
           <Text style={styles.deadTitle}>You Died</Text>
           <Text style={styles.stat}>Reached Room {world.roomIndex + 1}</Text>
@@ -219,7 +365,10 @@ export default function App() {
             <Pressable style={[styles.endBtn, styles.menuBtn]} onPress={() => setScreen('home')}>
               <Text style={styles.menuText}>Menu</Text>
             </Pressable>
-            <Pressable style={[styles.endBtn, styles.againBtn]} onPress={startRun}>
+            <Pressable
+              style={[styles.endBtn, styles.againBtn]}
+              onPress={() => startRun(world.chapter, world.endless)}
+            >
               <Text style={styles.againText}>Play Again</Text>
             </Pressable>
           </View>
@@ -234,11 +383,7 @@ export default function App() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#15171c' },
 
-  hud: { position: 'absolute', top: 50, left: 20, right: 20 },
-  hudText: { color: '#ffffff', fontSize: 20, fontWeight: '700' },
-  hudSub: { color: '#9aa0aa', fontSize: 14, marginTop: 2 },
-  threat: { color: '#ff8a7a', fontWeight: '700' },
-
+  // Live run readouts (health, depth, boss bar, room prompt) live in src/ui/Hud.
   muteBtn: {
     position: 'absolute', top: 50, right: 20,
     width: 44, height: 44, borderRadius: 22,
@@ -246,27 +391,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.10)',
   },
   muteText: { fontSize: 20 },
-  xpTrack: {
-    marginTop: 6, height: 6, width: 180, borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.15)', overflow: 'hidden',
-  },
-  xpFill: { height: 6, backgroundColor: '#7cc4ff' },
 
-  bossBarWrap: { position: 'absolute', top: 46, left: 20, right: 20, alignItems: 'center' },
-  bossLabel: { color: '#ff8a7a', fontSize: 13, fontWeight: '800', letterSpacing: 2, marginBottom: 4 },
-  bossTrack: {
-    height: 12, width: '100%', borderRadius: 6,
-    backgroundColor: 'rgba(255,255,255,0.15)', overflow: 'hidden',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)',
+  // Mirrors muteBtn's placement on the home screen so the corner control is
+  // always in the same spot whichever screen you're on.
+  pauseBtn: {
+    position: 'absolute', top: 50, right: 20,
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.10)',
   },
-  bossFill: { height: 12, backgroundColor: '#ff5a3c' },
-
-  banner: { position: 'absolute', top: 118, left: 0, right: 0, alignItems: 'center' },
-  bannerText: {
-    color: '#b6ffcf', fontSize: 15, fontWeight: '600',
-    backgroundColor: 'rgba(0,0,0,0.35)', paddingHorizontal: 12, paddingVertical: 6,
-    borderRadius: 8, overflow: 'hidden',
-  },
+  pauseIcon: { color: '#dfe4ec', fontSize: 15, fontWeight: '800', letterSpacing: 1 },
 
   overlay: {
     ...StyleSheet.absoluteFillObject,
@@ -293,6 +427,7 @@ const styles = StyleSheet.create({
   cardDesc: { color: '#aab2c0', fontSize: 14, marginTop: 2 },
   cardRarity: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginTop: 4 },
 
+  wonTitle: { color: '#3ecf5f', fontSize: 34, fontWeight: '800', marginBottom: 18 },
   deadTitle: { color: '#e5484d', fontSize: 34, fontWeight: '800', marginBottom: 18 },
   stat: { color: '#dfe4ec', fontSize: 17, marginVertical: 3 },
   goldEarned: { color: '#ffd45e', fontSize: 20, fontWeight: '800', marginTop: 10 },

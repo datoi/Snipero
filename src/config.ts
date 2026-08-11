@@ -14,6 +14,47 @@ export const CONFIG = {
     spreadDeg: 14,           // angle between multishot projectiles
     pierce: 0,
     settleDelay: 0.08,       // must stand still this long before the first shot
+
+    // Ceiling on armour's damage reduction. Well below 1 so no loadout can ever
+    // reach immunity — a build that cannot die has no run to play.
+    maxResist: 0.55,
+  },
+
+  // Weapon firing behaviour that isn't per-item. Only the burst pattern needs
+  // any: `single` and `arc` are fully described by their stat block.
+  weapon: {
+    burstShots: 3,
+    burstInterval: 0.09,   // tight enough to read as one burst, not three shots
+
+    // Ceiling on volleys paid out in one frame. High enough that an uncapped
+    // Attack Speed build fires its true rate on a 60Hz device; low enough that
+    // a stalled frame can't dump a wall of arrows at once.
+    maxVolleysPerFrame: 4,
+  },
+
+  // Heroes are pricier per level than gear and cap lower: you own one loadout
+  // per slot but you play one hero, so levelling them is a long commitment
+  // rather than something you top up between runs.
+  hero: {
+    powerPerLevel: 0.09,
+    baseUpgradeCost: 140,
+    upgradeGrowth: 1.34,
+  },
+
+  gear: {
+    powerPerLevel: 0.1,    // each level widens an item's stat band by 10%
+    baseUpgradeCost: 55,
+    upgradeGrowth: 1.28,
+
+    // Depth over which drops shift from "mostly commons" to "worth the trip".
+    dropRampRooms: 24,
+    // [shallow, deep] weight per rarity.
+    dropWeights: {
+      common: [70, 18],
+      rare: [26, 34],
+      epic: [4, 32],
+      legendary: [0, 16],
+    } as Record<'common' | 'rare' | 'epic' | 'legendary', [number, number]>,
   },
   projectile: {
     radius: 6,
@@ -22,7 +63,20 @@ export const CONFIG = {
   },
 
   progression: {
-    baseXpToNext: 8,         // XP needed for level 2
+    baseXpToNext: 14,       // tuned so the first card lands inside room 1 — that's the hook
+
+    // Multiplier on the XP needed for each successive level.
+    //
+    // This is the single most sensitive number in the run. It has to be read
+    // against reward growth (`difficulty.rewardPerRoom`) and against how many
+    // bodies a room spawns, because those are what pay for it. At 1.3 it
+    // outran both by roughly 1.2x per room and the draft switched itself off
+    // mid-run: a 30-room run delivered 19 of the 49 available card stacks and
+    // was handing out 0.4 cards/room by room 20, while enemy HP kept
+    // compounding. The player stopped getting stronger and the wave didn't.
+    //
+    // Tuned so cards keep arriving at roughly one per room deep into a run.
+    xpGrowth: 1.12,
 
     // How often each rarity shows up in a draft. Commons are the filler that
     // keeps damage climbing; epics are the cards a run gets *built* around, so
@@ -49,6 +103,41 @@ export const CONFIG = {
     // Frost buys space instead of dealing damage. Since the player can only
     // shoot while standing still, slowing the wave down *is* offense.
     frost: { slowPerStack: 0.18, maxSlow: 0.6, duration: 2 },
+
+    // Damage ramps the longer you hold your ground, resetting the instant you
+    // move. Every other card makes you stronger everywhere; this one pays you
+    // for committing to the one decision the whole game is built on, and takes
+    // it all back the moment you flinch.
+    focus: { perStackPerSec: 0.22, rampSeconds: 3 },
+
+    // Steering, in radians per second of course correction. Deliberately weak
+    // per stack: shots that turn hard stop being a thing you aim and start
+    // being a thing that happens, and positioning stops mattering.
+    homing: { turnPerStack: 2.4 },
+
+    // Contact damage returned to the attacker. Scales with how hard they hit,
+    // so it answers the swarm that's actually hurting you rather than paying
+    // out flat against everything.
+    thorns: { reflectPerStack: 0.55 },
+
+    // An absorb pool that refills out of combat. Effective HP that rewards
+    // disengaging, which is the defensive skill this game otherwise never asks
+    // for — hearts reward nothing but surviving.
+    shield: { perStack: 26, refillDelay: 4, refillPerSec: 14 },
+
+    // Kills detonate. Reuses the bomber's blast, so a big multishot volley into
+    // a pack chains visibly — and it's the one damage source that doesn't care
+    // about the auto-aim picking the nearest target.
+    detonate: { damagePerStack: 16, radius: 78, fuse: 0.16 },
+
+    // Damage dealt returned as health. Direct hits only, never damage-over-time:
+    // burn ticks four times a second, and siphoning off them would make the
+    // pairing self-sustaining rather than a trade.
+    siphon: { fractionPerStack: 0.035 },
+
+    // More gold, and a wider magnet so collecting it costs less exposure. Worth
+    // taking only because the forge gives run gold somewhere to go.
+    greed: { goldPerStack: 0.3, magnetPerStack: 55 },
   },
 
   // One config block per enemy archetype.
@@ -103,6 +192,28 @@ export const CONFIG = {
       projectileDamage: 10,
       projectileRadius: 7,
     },
+    // The bomber exists to sharpen the one tension the whole game is built on:
+    // you can only shoot while standing still. Every other archetype punishes
+    // standing still with damage you can out-heal; this one puts a countdown on
+    // the tile you're standing on. Killing it early costs you firing time you'd
+    // rather spend on the wave; killing it late means eating the blast; ignoring
+    // it means it picks the moment. It is fast and frail on purpose — the answer
+    // is always "deal with it now", the cost is always "not right now".
+    bomber: {
+      radius: 17,
+      maxHp: 34,               // frail: one or two hits, so the cost is tempo not damage
+      speed: 128,              // outruns the player's 230 only in a straight line
+      contactDamage: 0,        // the blast is the damage; touching it does nothing
+      color: '#ff5cae',        // pink — reads as "not one of the others" at a glance
+      xpReward: 9,
+      goldReward: 7,
+
+      triggerRange: 76,        // how close it gets before committing to detonate
+      fuse: 0.62,              // telegraph once it commits — long enough to sprint out
+      deathFuse: 0.28,         // shorter beat when shot: a kill is still a warning
+      blastRadius: 104,
+      blastDamage: 26,
+    },
     charger: {
       radius: 24,
       maxHp: 95,
@@ -123,9 +234,33 @@ export const CONFIG = {
     life: 3.5,
   },
 
+  blast: {
+    color: '#ff9d5c',
+    // Damage at the very rim, as a fraction of full. Not zero: a blast that does
+    // nothing at the edge trains players to stand exactly on the edge, which is
+    // a worse habit than simply moving away.
+    minDamageFraction: 0.35,
+  },
+
   // Boss appears every Nth room. The room straight after each boss is a chest
   // room — a breather to spend the win on before the next wave.
   bossEvery: 4,
+
+  // A run has a destination.
+  //
+  // Room counts are multiples of `bossEvery`, so the last room of a chapter is
+  // naturally a boss room — the chapter boss is the existing rhythm landing on
+  // the end, not a special case bolted onto it. Each chapter owns one boss
+  // archetype, so "which chapter am I in" and "what am I fighting" are the same
+  // fact, and clearing one is a distinct memory rather than a bigger number.
+  //
+  // Endless mode replays the deepest chapter's tables and simply never ends; it
+  // is the score chase, not the game.
+  chapters: [
+    { title: 'The Undergrowth', rooms: 12, boss: 0 },
+    { title: 'Ashfall Reach',   rooms: 16, boss: 1 },
+    { title: 'The Deep Vault',  rooms: 20, boss: 2 },
+  ],
 
   // How a run gets harder the deeper it goes.
   //
@@ -135,9 +270,14 @@ export const CONFIG = {
   // compounding per room, which is the only shape that keeps pace with a player
   // whose damage is also multiplicative.
   difficulty: {
-    enemyHpPerRoom: 0.13,      // compounding, so depth outruns flat damage cards
+    // Compounding HP has to be read against how fast the player's damage can
+    // actually compound, which is bounded by how many cards the draft delivers.
+    // At 0.13 the wave grew x130 over 30 rooms while player damage grew x6:
+    // a room-30 clear needed ~170 seconds of uninterrupted fire. Depth should
+    // outrun a *lazy* build, not every possible one.
+    enemyHpPerRoom: 0.085,
     enemyDamagePerRoom: 0.055, // slower than HP — deaths should come from swarm, not one-shots
-    rewardPerRoom: 0.07,       // gold/XP keep pace so leveling never stalls out
+    rewardPerRoom: 0.09,       // gold/XP keep pace so leveling never stalls out
     bossHpPerBoss: 0.5,        // each boss is a real step up, not a reskin
     bossDamagePerBoss: 0.12,
 
@@ -152,6 +292,26 @@ export const CONFIG = {
   // start, so without this one enemy per room lands already touching them —
   // free damage before the player has had a single frame to react.
   spawnClearance: 90,
+
+  // Reward rooms. Three offers, one pick.
+  shrine: {
+    count: 3,
+    radius: 26,
+    openRange: 30,
+    openTime: 0.4,
+    y: 0.42,          // fraction of arena height; spread across the width
+
+    // The pact: two cards for a permanent slice of max HP. Two rather than one
+    // because a single card is what the free blessing already gives — a cost
+    // has to buy something the free option can't.
+    devilCards: 2,
+    devilHpCost: 0.25,
+    minMaxHp: 30,     // a pact can never leave you one-shottable
+
+    // Priced against a boss payout, so it's affordable but not free — the point
+    // is to make mid-run gold worth picking up under fire.
+    forgeCost: 90,
+  },
 
   chest: {
     radius: 26,
@@ -173,13 +333,62 @@ export const CONFIG = {
     preferredRange: 260,   // distance it tries to hold while repositioning
     recover: 0.45,         // pause after an instant attack
 
+    // One entry per boss archetype. A chapter picks one, so "chapter 2" means a
+    // different fight rather than the same fight with a bigger health bar.
+    //
+    // Variety here is in the ATTACK GRAMMAR, not the numbers: the Warden makes
+    // you dodge projectiles, the Bombardier makes you keep moving through ground
+    // you can't stand on, and the Juggernaut makes you bait a charge into cover.
+    // Three different questions, one state machine.
+    //
     // Phases activate as HP fraction drops to/below each threshold. Deeper
     // phases add attacks and move/act faster.
-    phases: [
-      { threshold: 1.0, attacks: ['radial', 'volley'],           speedMult: 1.0,  gapTime: 1.0,  color: '#c0392b' },
-      { threshold: 0.6, attacks: ['radial', 'volley', 'charge'], speedMult: 1.15, gapTime: 0.8,  color: '#e04836' },
-      { threshold: 0.3, attacks: ['radial', 'volley', 'charge'], speedMult: 1.35, gapTime: 0.55, color: '#ff5a3c' },
-    ] as { threshold: number; attacks: BossAttackId[]; speedMult: number; gapTime: number; color: string }[],
+    variants: [
+      {
+        title: 'The Warden',
+        hpMult: 1, damageMult: 1,
+        phases: [
+          { threshold: 1.0, attacks: ['radial', 'volley'],           speedMult: 1.0,  gapTime: 1.0,  color: '#c0392b' },
+          { threshold: 0.6, attacks: ['radial', 'volley', 'charge'], speedMult: 1.15, gapTime: 0.8,  color: '#e04836' },
+          { threshold: 0.3, attacks: ['radial', 'volley', 'charge'], speedMult: 1.35, gapTime: 0.55, color: '#ff5a3c' },
+        ],
+      },
+      {
+        title: 'The Bombardier',
+        // Frailer and slower, because its threat is the floor rather than its
+        // body — you are rarely fighting it at close range.
+        hpMult: 0.85, damageMult: 0.95,
+        phases: [
+          { threshold: 1.0, attacks: ['bombs', 'volley'],          speedMult: 0.9,  gapTime: 1.05, color: '#2f6f4f' },
+          { threshold: 0.6, attacks: ['bombs', 'volley', 'radial'], speedMult: 1.0,  gapTime: 0.8,  color: '#39916a' },
+          { threshold: 0.3, attacks: ['bombs', 'radial'],           speedMult: 1.1,  gapTime: 0.5,  color: '#4ecf94' },
+        ],
+      },
+      {
+        title: 'The Juggernaut',
+        // Tanky and charge-heavy: the arena pillars are the counter, so this one
+        // rewards a player who has learned to fight around cover.
+        hpMult: 1.35, damageMult: 1.1,
+        phases: [
+          { threshold: 1.0, attacks: ['charge', 'volley'],           speedMult: 1.05, gapTime: 0.95, color: '#4a3f8f' },
+          { threshold: 0.6, attacks: ['charge', 'radial'],           speedMult: 1.25, gapTime: 0.7,  color: '#6a52c9' },
+          { threshold: 0.3, attacks: ['charge', 'radial', 'bombs'],  speedMult: 1.45, gapTime: 0.45, color: '#8a6bff' },
+        ],
+      },
+    ] as {
+      title: string;
+      hpMult: number;
+      damageMult: number;
+      phases: { threshold: number; attacks: BossAttackId[]; speedMult: number; gapTime: number; color: string }[];
+    }[],
+
+    // Seeded around the player rather than aimed at them, and staggered so the
+    // floor lights up in sequence instead of all at once — the player has to
+    // keep moving through it rather than sidestep once.
+    bombs: {
+      count: 5, telegraph: 0.55, scatter: 150, radius: 92,
+      damage: 16, fuse: 0.85, stagger: 0.22,
+    },
 
     radial: { count: 16, telegraph: 0.7, projSpeed: 260, damage: 12, projRadius: 8 },
     volley: { shots: 5, interval: 0.14, telegraph: 0.5, projSpeed: 360, damage: 10, projRadius: 7 },
@@ -269,6 +478,7 @@ export const CONFIG = {
       bossSlam: 14,
       bossRadial: 5,
       bossDeath: 20,
+      blast: 12,         // heavy, but under bossSlam — a bomber is not a boss
     },
 
     // Red full-screen flash when the player takes damage.
@@ -336,8 +546,45 @@ export const CONFIG = {
     ] as { x: number; y: number; w: number; h: number }[],
   },
 
-  // Room-by-room progression. Each room is a list of {kind, count}. Rooms get
-  // harder; after the last one it loops (roomIndex keeps climbing for the label).
+  // How waves are composed once the authored opening is behind us.
+  //
+  // The room table below used to loop forever, so room 22 was room 2 with bigger
+  // numbers — depth changed the arithmetic and nothing else. Past the opening,
+  // waves are built by spending a threat budget instead, with the mix shifting
+  // as the run goes deeper. Same knobs produce every future room, so adding an
+  // archetype means adding a cost and a weight, not authoring N more rows.
+  waves: {
+    // Relative danger, NOT hit points — a charger costs more than its HP implies
+    // because a dash the player has to read is worth more attention than a body
+    // walking in a straight line.
+    cost: { chaser: 1, shooter: 1.6, charger: 2.4, bomber: 2 } as Record<EnemyKind, number>,
+
+    baseBudget: 6,
+    budgetPerRoom: 0.55,
+
+    minBodies: 3,
+    maxBodies: 14,   // hard ceiling — past this it reads as lag, not difficulty
+
+    // Rooms over which the mix travels from its shallow blend to its deep one.
+    rampRooms: 20,
+
+    // [shallow, deep] weight per archetype. Early rooms are a brawl; deep rooms
+    // are a mixed-threat problem where standing still is punished from range
+    // while something charges the spot you're standing in.
+    weights: {
+      chaser: [6, 3],
+      shooter: [1, 4],
+      charger: [0.5, 3],
+      // Starts at zero on purpose. The bomber is the archetype that punishes
+      // standing still, and a player still learning that they *have* to stand
+      // still has no chance of reading it. It arrives once the basic loop is
+      // second nature and then becomes a standing tax on camping.
+      bomber: [0, 3],
+    } as Record<EnemyKind, [number, number]>,
+  },
+
+  // The authored opening. Each of these introduces one archetype at a time;
+  // past the last entry, waves come from the budget above rather than looping.
   rooms: [
     [{ kind: 'chaser', count: 4 }],
     [{ kind: 'chaser', count: 3 }, { kind: 'shooter', count: 2 }],
