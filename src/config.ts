@@ -171,7 +171,7 @@ export const CONFIG = {
 
     chaser: {
       radius: 20,
-      maxHp: 60,
+      maxHp: 90,
       speed: 70,
       contactDamage: 12,
       color: '#e5484d',        // red
@@ -180,7 +180,7 @@ export const CONFIG = {
     },
     shooter: {
       radius: 18,
-      maxHp: 40,
+      maxHp: 62,
       speed: 55,
       contactDamage: 8,
       color: '#f2a20c',        // orange
@@ -201,7 +201,8 @@ export const CONFIG = {
     // is always "deal with it now", the cost is always "not right now".
     bomber: {
       radius: 17,
-      maxHp: 34,               // frail: one or two hits, so the cost is tempo not damage
+      maxHp: 46,               // still frail on purpose: it dies fast enough that the
+                               // cost of answering it is tempo, not damage
       speed: 128,              // outruns the player's 230 only in a straight line
       contactDamage: 0,        // the blast is the damage; touching it does nothing
       color: '#ff5cae',        // pink — reads as "not one of the others" at a glance
@@ -216,7 +217,7 @@ export const CONFIG = {
     },
     charger: {
       radius: 24,
-      maxHp: 95,
+      maxHp: 145,
       speed: 55,               // slow creep while winding up
       contactDamage: 18,
       color: '#b05cf0',        // purple
@@ -232,6 +233,15 @@ export const CONFIG = {
 
   enemyProjectile: {
     life: 3.5,
+
+    // Incoming fire has to be unmistakable at a glance, and it wasn't: the old
+    // amber (#ffb020) sat right next to the gold of a coin (#ffd45e), so the
+    // thing you run *toward* and the thing you run *from* were the same colour
+    // at the same size. Crimson separates them by hue, and the pale rim inverts
+    // the coin's dark one so they differ in structure too — which is what still
+    // reads when something is moving fast across a busy floor.
+    color: '#ff2e63',
+    rimColor: '#ffd9e2',
   },
 
   blast: {
@@ -324,7 +334,7 @@ export const CONFIG = {
 
   boss: {
     radius: 46,
-    maxHp: 900,
+    maxHp: 1400,
     contactDamage: 22,
     xpReward: 60,
     goldReward: 80,

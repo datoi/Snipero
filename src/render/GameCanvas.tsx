@@ -258,7 +258,11 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
             width: p.radius * 2,
             height: p.radius * 2,
             borderRadius: p.radius,
-            backgroundColor: '#ffb020',
+            // Crimson core with a pale rim — the inverse of a coin's gold body
+            // and dark rim, so incoming fire and loot never read the same.
+            backgroundColor: CONFIG.enemyProjectile.color,
+            borderWidth: 2,
+            borderColor: CONFIG.enemyProjectile.rimColor,
           }}
         />
       ))}

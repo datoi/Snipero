@@ -262,8 +262,14 @@ export function drawScene(canvas: SkCanvas, world: World, width: number, height:
   }
 
   // ── Projectiles ──
-  fill('#ffb020');
-  for (const p of enemyProjectiles) canvas.drawCircle(p.pos.x, p.pos.y, p.radius, fillPaint);
+  // Enemy fire: crimson core, pale rim. Deliberately the inverse of a coin's
+  // gold-with-dark-rim, so the two never read the same in peripheral vision.
+  for (const p of enemyProjectiles) {
+    fill(CONFIG.enemyProjectile.color);
+    canvas.drawCircle(p.pos.x, p.pos.y, p.radius, fillPaint);
+    stroke(CONFIG.enemyProjectile.rimColor, 2);
+    canvas.drawCircle(p.pos.x, p.pos.y, p.radius - 1, strokePaint);
+  }
 
   fill('#ffffff');
   for (const p of projectiles) canvas.drawCircle(p.pos.x, p.pos.y, p.radius, fillPaint);
