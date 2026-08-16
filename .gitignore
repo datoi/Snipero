@@ -39,3 +39,7 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Raw art packs. Only the tiles actually used are committed, under assets/art/.
+# Re-downloadable from https://kenney.nl/assets (CC0) if you want more.
+assets/kenney_*/

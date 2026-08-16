@@ -51,11 +51,21 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
         ]}
       >
         {THEME.floor && (
-          <Image
-            source={THEME.floor}
-            resizeMode="repeat"
-            style={StyleSheet.absoluteFill}
-          />
+          <>
+            <Image
+              source={THEME.floor}
+              resizeMode="repeat"
+              style={StyleSheet.absoluteFill}
+            />
+            {/* Knock the tileset back so the floor stays quieter than anything
+                moving on it. See ArenaTheme.floorDim. */}
+            <View
+              style={[
+                StyleSheet.absoluteFill,
+                { backgroundColor: '#000000', opacity: THEME.floorDim },
+              ]}
+            />
+          </>
         )}
       </View>
 
@@ -113,11 +123,19 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
               }}
             >
               {THEME.obstacle && (
-                <Image
-                  source={THEME.obstacle}
-                  resizeMode="repeat"
-                  style={StyleSheet.absoluteFill}
-                />
+                <>
+                  <Image
+                    source={THEME.obstacle}
+                    resizeMode="repeat"
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <View
+                    style={[
+                      StyleSheet.absoluteFill,
+                      { backgroundColor: '#000000', opacity: THEME.obstacleDim },
+                    ]}
+                  />
+                </>
               )}
             </View>
           </React.Fragment>

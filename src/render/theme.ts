@@ -25,6 +25,18 @@ export interface ArenaTheme {
   /** Repeating texture for cover. Wants to read as solid at a glance. */
   obstacle?: ImageSourcePropType;
 
+  /**
+   * How much black to lay over each texture, 0..1.
+   *
+   * Asset packs are authored bright, for games with bright UI. This one is dark,
+   * and the arena has to stay quieter than the things moving on it — a floor
+   * that competes with a projectile for attention is a floor that gets someone
+   * killed. Dimming beats recolouring the source art: it keeps the texture's
+   * detail and lets one tileset suit any palette.
+   */
+  floorDim: number;
+  obstacleDim: number;
+
   /** Flat colours used when the matching texture is absent. */
   floorColor: string;
   /** Slightly lifted panel so the play area reads as a room, not a void. */
@@ -33,9 +45,17 @@ export interface ArenaTheme {
   wallColor: string;
 }
 
+// Kenney "Top-down Shooter" (CC0). Only the tiles actually used are committed,
+// under assets/art/; the raw 600-file pack is gitignored and re-downloadable
+// from https://kenney.nl/assets.
+//   floor-stone.png = tile_272, a stone panel that tiles into a flagstone floor
+//   crate.png       = tile_129, a crate lid that tiles into stacked cover
 export const THEME: ArenaTheme = {
-  // floor: require('../../assets/art/floor.png'),
-  // obstacle: require('../../assets/art/wall.png'),
+  floor: require('../../assets/art/floor-stone.png'),
+  obstacle: require('../../assets/art/crate.png'),
+
+  floorDim: 0.72,
+  obstacleDim: 0.4,
 
   floorColor: '#15171c',
   floorPanelColor: '#191d25',
