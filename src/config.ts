@@ -417,7 +417,23 @@ export const CONFIG = {
   door: {
     width: 96,
     height: 26,
-    marginTop: 64,   // distance from the top of the screen
+
+    // Distance from the top of the screen.
+    //
+    // At 64 the door spanned y 51-77 and the HP readout occupies y 50-74, so
+    // the exit sat directly behind the HUD and read as another status bar —
+    // the banner said "go through the door" while the door was disguised as a
+    // health meter.
+    //
+    // The top of the screen is a stack, and everything in it has to clear the
+    // piece above:
+    //     50-105   HUD (HP line, room/level line, XP bar)
+    //    110-142   boss bar, when a boss is alive
+    //    147-173   this door
+    //    185+      room prompt banner
+    // Costs ~100px of arena at the top, which the spawn ring and the player
+    // start position both sit well clear of.
+    marginTop: 160,
   },
 
   joystick: {

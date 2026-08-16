@@ -58,7 +58,23 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
         />
       ))}
 
-      {/* Door at the top — grey when locked, glowing green when open */}
+      {/* Door at the top — grey when locked, glowing green when open.
+          Frame posts give it a silhouette no HUD element has; a plain filled
+          bar read as a status meter when it sat near the HP readout. */}
+      {[-8, door.width].map((offset) => (
+        <View
+          key={`post${offset}`}
+          style={{
+            position: 'absolute',
+            left: door.pos.x - door.width / 2 + offset,
+            top: door.pos.y - door.height / 2 - 6,
+            width: 8,
+            height: door.height + 12,
+            borderRadius: 3,
+            backgroundColor: '#2a2f3a',
+          }}
+        />
+      ))}
       <View
         style={{
           position: 'absolute',
@@ -70,8 +86,12 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
           backgroundColor: door.open ? '#3ecf5f' : '#3a3f4a',
           borderWidth: door.open ? 3 : 0,
           borderColor: '#b6ffcf',
+          alignItems: 'center',
+          justifyContent: 'center',
         }}
-      />
+      >
+        {door.open && <Text style={{ color: '#eafff1', fontSize: 16, fontWeight: '900' }}>↑</Text>}
+      </View>
 
       {/* Loot on the floor — under the actors so bodies always read on top.
           Each one floats on its own phase offset so a pile doesn't pulse as

@@ -91,14 +91,10 @@ const styles = StyleSheet.create({
   },
   xpFill: { height: 6, backgroundColor: '#7cc4ff' },
 
-  // Below the HUD block, not on top of it. At top:46 the boss track landed on
-  // the HP readout and clipped the room/level line — in every boss room, which
-  // is one room in four. The HUD stack measures ~55px from top:50 (HP line, sub
-  // line, XP bar), so 112 clears it with a margin.
-  //
-  // It cannot collide with the room banner below: the banner only renders once
-  // the room is cleared, and a room is only cleared once the boss is gone.
-  bossBarWrap: { position: 'absolute', top: 112, left: 20, right: 20, alignItems: 'center' },
+  // The top of the screen is a stack, and each piece clears the one above it:
+  // HUD 50-105, boss bar 110-142, door 147-173 (config.door.marginTop), banner
+  // 185+. At top:46 this landed on the HP readout and clipped the room line.
+  bossBarWrap: { position: 'absolute', top: 110, left: 20, right: 20, alignItems: 'center' },
   bossLabel: { color: '#ff8a7a', fontSize: 13, fontWeight: '800', letterSpacing: 2, marginBottom: 4 },
   bossTrack: {
     height: 12, width: '100%', borderRadius: 6,
@@ -107,7 +103,8 @@ const styles = StyleSheet.create({
   },
   bossFill: { height: 12, backgroundColor: '#ff5a3c' },
 
-  banner: { position: 'absolute', top: 158, left: 0, right: 0, alignItems: 'center' },
+  // Below the door, so the prompt never covers the exit it is pointing at.
+  banner: { position: 'absolute', top: 185, left: 0, right: 0, alignItems: 'center' },
   bannerText: {
     color: '#b6ffcf', fontSize: 15, fontWeight: '600',
     backgroundColor: 'rgba(0,0,0,0.35)', paddingHorizontal: 12, paddingVertical: 6,
