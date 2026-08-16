@@ -39,6 +39,14 @@ export function createWorld(w: number, h: number, chapter = 0, endless = false):
       frost: 0,
       stacks: {},
       settleDelay: pc.settleDelay,
+      // The skill arrives with the hero (see applyHero). A world built before
+      // one is chosen simply has no button, which is also the right state for
+      // the brief moment between createWorld and the meta being applied.
+      skill: '',
+      skillCd: 0,
+      skillCdMax: 0,
+      skillTimer: 0,
+      skillPower: 1,
       resist: 0,
       shieldMax: 0,
       shield: 0,
@@ -88,7 +96,7 @@ export function createWorld(w: number, h: number, chapter = 0, endless = false):
     enemiesKilled: 0,
     runGold: 0,
     fx: makeFx(),
-    input: { axis: vec(0, 0), moving: false },
+    input: { axis: vec(0, 0), moving: false, skillHeld: 0 },
     bounds: { w, h },
     nextId: 1,
     time: 0,

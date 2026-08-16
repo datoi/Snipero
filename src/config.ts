@@ -64,6 +64,102 @@ export const CONFIG = {
     upgradeGrowth: 1.34,
   },
 
+  // ── Hero skills ────────────────────────────────────────────────────────────
+  //
+  // The one button in the game. Everything else the player does is expressed
+  // through the stick — move, or stop and let the auto-aim work — which means
+  // the entire moment-to-moment decision is *when to stand still*. That is a
+  // good core, and it has one hole: while you are running, you are doing
+  // nothing. Kiting a room contributes zero damage and zero progress; it is
+  // dead time the player spends waiting to be allowed to play again.
+  //
+  // Skills exist to fill that hole, so the rule they all obey is: A SKILL CAN
+  // BE CAST WHILE MOVING. That single constraint is what makes the button worth
+  // a thumb. It is also why none of them are simply "deal damage" — each one
+  // answers the specific trouble its hero gets into, so the interesting question
+  // is *when* you spend it, not whether it is strong.
+  //
+  // Magnitudes scale with hero level (see skillPower); cooldowns never do.
+  // Cooldown reduction compounds with everything else a hero gets and would
+  // eventually make the button free, which turns a decision into a rotation.
+  skills: {
+    // Cast while the cooldown ring is still filling and nothing happens. That
+    // silence is a bad tell on a phone, where a thumb often lands early, so a
+    // press inside this window is remembered and fires the instant it comes up.
+    // Long enough to forgive an eager tap, short enough that it can never spend
+    // the skill on a fight the player has already walked away from.
+    bufferTime: 0.35,
+
+    // Rook — Overwatch. Keep firing while running, for a few seconds.
+    //
+    // The starter's skill is deliberately the plainest statement of the rule
+    // above: it hands you the thing the game otherwise forbids. A player who
+    // learns nothing else learns "the button is how I act while moving".
+    overwatch: { cooldown: 12, duration: 4 },
+
+    // Vera — Blink. Jump a fixed distance, straight through cover.
+    //
+    // She is the fragile one, so hers is the escape. Passing through walls is
+    // the privilege that makes it worth a slot over just running: it is the only
+    // thing in the game that treats cover as though it were not there.
+    blink: { cooldown: 6, distance: 190 },
+
+    // Bastion — Bulwark. Slam: refill the shield, shove everything back, and
+    // take much less for a moment.
+    //
+    // He is slow, so he cannot solve being surrounded by leaving. This lets him
+    // solve it by not needing to.
+    bulwark: { cooldown: 14, duration: 3, resist: 0.35, knockback: 130, radius: 150 },
+
+    // Ember — Pyre. Set the ground around her alight for a few seconds.
+    //
+    // She dies fastest up close, so hers makes up close the wrong place to be —
+    // for them. Re-applies the same Blaze burn the draft hands out, so it reads
+    // and pays out exactly like a burn the player already understands.
+    //
+    // `stacks` was 4 and had to come down hard. Burn is applied per body and
+    // keeps ticking while she runs, so it was compounding twice: measured
+    // against a three-body pack it more than doubled her damage in a stand-up
+    // fight (+122%) and more than tripled it while kiting (+236%), which is not
+    // a skill, it's a different hero. At 2 it lands beside Quake instead.
+    pyre: { cooldown: 10, duration: 3.5, radius: 132, stacks: 2 },
+
+    // Kestrel — Mark. Every shot crits, briefly.
+    //
+    // Her whole design is variance: high crit, terrible fire rate, and runs that
+    // swing on rolls she does not control. This is the one moment she does — it
+    // does not raise her average, it lets her choose where the spike lands.
+    mark: { cooldown: 12, duration: 3.5 },
+
+    // Nomad — Windfall. Every scrap of loot in the room comes to him.
+    //
+    // The HUD already warns that pickups are about to be destroyed by the next
+    // room; for the economy hero, that warning becomes a button. Reuses the
+    // magnet the pickups already have, so loot flies in on the same arc it
+    // always does rather than teleporting.
+    windfall: { cooldown: 9, speedBoost: 0.35, duration: 2.5 },
+
+    // Brack — Quake. Slam the floor: heavy damage in a wide ring, and everything
+    // caught in it is chilled.
+    //
+    // Note it SLOWS rather than shoves. Brack's damage comes from thorns — from
+    // being hit — so knocking the wave off him would be his skill undoing his
+    // build. Freezing them in place next to him is the version that agrees with
+    // the hero.
+    // damageMult was 5.5, which measured +63% to his damage in a fight — high
+    // for a hero whose passive is already a survivability wall. 3.8 keeps the
+    // slam feeling like the reason to be standing in the middle of a crowd
+    // without making it the only thing he does.
+    quake: { cooldown: 9, radius: 168, damageMult: 3.8, frost: 3, fuse: 0.12 },
+
+    // Iris — Salvo. One homing shot at every enemy on the floor, at once.
+    //
+    // Cover is the one thing her build already ignores, so hers ignores it
+    // completely: the volley does not check line of sight. Capped hard, because
+    // "one per enemy" in a deep room is exactly the shape of a frame-rate bug.
+    salvo: { cooldown: 10, damageMult: 1.5, homing: 6, maxShots: 12 },
+  },
+
   gear: {
     powerPerLevel: 0.1,    // each level widens an item's stat band by 10%
     baseUpgradeCost: 55,

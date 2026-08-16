@@ -1,6 +1,7 @@
 import { CONFIG } from '../config';
 import { World } from '../engine/types';
 import { addFlash, addShake } from './fx';
+import { skillActive } from './skills';
 import { haptic, sfx } from './sfx';
 
 // The single path by which the PLAYER loses HP.
@@ -24,8 +25,12 @@ export function damagePlayer(
   const p = world.player;
   if (amount <= 0 || p.hp <= 0) return;
 
-  // Armour. Hard-capped so stacking resistance can never reach immunity.
-  const resist = Math.min(CONFIG.player.maxResist, p.resist);
+  // Armour. Hard-capped so stacking resistance can never reach immunity —
+  // Bulwark is added BEFORE the cap for exactly that reason: a skill that could
+  // lift the ceiling would be three seconds of literal invulnerability, and the
+  // cap is the promise that no combination of anything ever gets there.
+  const bulwark = skillActive(p, 'bulwark') ? CONFIG.skills.bulwark.resist : 0;
+  const resist = Math.min(CONFIG.player.maxResist, p.resist + bulwark);
   let incoming = amount * (1 - resist);
 
   // Any hit stops the shield refilling, including a graze that the shield fully

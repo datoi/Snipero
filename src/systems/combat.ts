@@ -5,6 +5,8 @@ import { blocked, hasLineOfSight, segmentBlocked } from './obstacles';
 import { emitFlash, emitMuzzle, emitRing, emitWallSpark } from './fx';
 import { damageBoss, damageEnemy } from './damage';
 import { applyBurn, applyFrost } from './status';
+import { skillActive } from './skills';
+import { spawnPlayerShot } from './shotSpawn';
 import { sfx } from './sfx';
 import { normalize as norm } from '../engine/vec';
 
@@ -61,14 +63,26 @@ export function updateCombat(world: World, dt: number) {
   const p = world.player;
   p.cooldown -= dt;
 
-  if (world.input.moving) {
-    p.stillTime = 0; // moving: reset, never fire
-    p.burstLeft = 0; // and a burst you walked out of does not resume later
-    return;
-  }
+  // Overwatch suspends the one rule the whole game is built on. Handled here
+  // rather than by a flag the skill sets, because "may I fire right now" is a
+  // question with exactly one home and this is it.
+  const running = world.input.moving;
+  const freeFire = skillActive(p, 'overwatch');
 
-  p.stillTime += dt;
-  if (p.stillTime < p.settleDelay) return;
+  if (running) {
+    // stillTime stays at zero even while firing on the move, and that is not an
+    // oversight: it is the clock Focus ramps on. Focus is explicitly paid for
+    // holding your ground, so a skill that lets you shoot while running must
+    // not also hand you the reward for standing still.
+    p.stillTime = 0;
+    if (!freeFire) {
+      p.burstLeft = 0; // a burst you walked out of does not resume later
+      return;
+    }
+  } else {
+    p.stillTime += dt;
+    if (p.stillTime < p.settleDelay) return;
+  }
 
   // Mid-burst: the reload clock is already running, so this only decides when
   // the next bolt of the current burst leaves. Re-targeting per bolt is
@@ -199,40 +213,11 @@ function aimCone(p: { pos: Vec2 }, target: Targetable, n: number): number {
   return (2 * Math.atan2(halfHit, d)) / (n - 1);
 }
 
-// Crit is rolled per projectile rather than per shot, so multishot genuinely
-// buys more chances to spike — the two cards are meant to reinforce each other.
-// How much Focus is currently paying. Read at spawn time rather than baked into
-// p.damage, because the ramp has to be able to fall back to nothing the instant
-// the player moves — and a shot already in flight keeps whatever it launched
-// with, same as every other modifier.
-function focusMult(p: World['player']): number {
-  if (p.focus <= 0) return 1;
-  const c = CONFIG.abilities.focus;
-  const held = Math.min(p.stillTime, c.rampSeconds);
-  return 1 + p.focus * c.perStackPerSec * held;
-}
-
+// Every shot the basic attack puts in the air. Kestrel's Mark is the only thing
+// that overrides the crit roll — asked here rather than baked into critChance so
+// the buff can never leak into the stat the HUD and the draft cards report.
 function spawnShot(world: World, dir: Vec2) {
-  const p = world.player;
-  const crit = p.critChance > 0 && Math.random() < p.critChance;
-  const dmg = p.damage * focusMult(p);
-
-  world.projectiles.push({
-    id: world.nextId++,
-    pos: { x: p.pos.x, y: p.pos.y },
-    vel: { x: dir.x * CONFIG.projectile.speed, y: dir.y * CONFIG.projectile.speed },
-    radius: CONFIG.projectile.radius,
-    damage: crit ? dmg * p.critMult : dmg,
-    life: CONFIG.projectile.life,
-    pierce: p.pierce,
-    hitIds: [],
-    alive: true,
-    bounces: p.bounces,
-    burn: p.burn,
-    frost: p.frost,
-    crit,
-    homing: p.homing,
-  });
+  spawnPlayerShot(world, dir, { crit: skillActive(world.player, 'mark') });
 }
 
 // Reflect a shot that ran into cover. The step is rewound to where it started,

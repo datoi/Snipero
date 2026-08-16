@@ -3,6 +3,7 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 
 import { charSprite } from '../render/sprites';
 import { HEROES, HeroDef, MAX_HERO_LEVEL, heroUpgradeCost } from '../systems/heroes';
+import { getSkill } from '../systems/skills';
 import {
   MetaState,
   canUnlockHero,
@@ -30,6 +31,7 @@ export function HeroMenu({ meta, onUnlock, onUpgrade, onSelect }: Props) {
         const lvl = heroLevel(meta, def.id);
         const active = meta.hero === def.id;
         const maxed = lvl >= MAX_HERO_LEVEL;
+        const skill = getSkill(def.skill);
 
         return (
           <View key={def.id} style={[styles.card, { borderColor: def.color }]}>
@@ -55,6 +57,20 @@ export function HeroMenu({ meta, onUnlock, onUpgrade, onSelect }: Props) {
                 {active && <Text style={styles.active}>PLAYING</Text>}
               </View>
               <Text style={styles.desc}>{def.desc}</Text>
+
+              {/* The skill, shown on a locked hero too. It is the most
+                  interesting thing about a character and therefore the reason
+                  to save up for one — hiding it until after the purchase would
+                  make the roster a list of prices. */}
+              {skill && (
+                <View style={styles.skillRow}>
+                  <Text style={styles.skillIcon}>{skill.icon}</Text>
+                  <Text style={styles.skillText}>
+                    <Text style={[styles.skillName, { color: def.color }]}>{skill.title}</Text>
+                    {'  '}{skill.desc}
+                  </Text>
+                </View>
+              )}
             </View>
 
             <View style={styles.actions}>
@@ -126,6 +142,13 @@ const styles = StyleSheet.create({
     borderRadius: 6, overflow: 'hidden', letterSpacing: 0.5,
   },
   desc: { color: '#aab2c0', fontSize: 13, marginTop: 3 },
+
+  skillRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 6 },
+  skillIcon: { fontSize: 14, marginRight: 5 },
+  // flex so the description wraps under itself rather than pushing the buttons
+  // off the right edge of a narrow phone.
+  skillText: { flex: 1, color: '#8c93a2', fontSize: 12, lineHeight: 16 },
+  skillName: { fontWeight: '800' },
 
   actions: { marginLeft: 10, minWidth: 80 },
   btn: {

@@ -10,6 +10,7 @@ import { updateShrines } from './shrine';
 import { updatePlayerDefense } from './playerDamage';
 import { updateBlasts } from './blast';
 import { updateStatus } from './status';
+import { updateSkills } from './skills';
 
 // The per-frame tick. When the run is paused (drafting a card) or over (dead),
 // the simulation freezes — the UI overlay drives what happens next.
@@ -22,6 +23,11 @@ export function updateWorld(world: World, dt: number) {
 
   world.time += dt;
 
+  // Before movement and combat, both of which ask whether a skill is running.
+  // Casting first means a skill takes effect on the frame it was pressed rather
+  // than the one after — at 60fps that is 16ms, and it is the difference between
+  // a button that feels connected to the thumb and one that feels laggy.
+  updateSkills(world, dt);
   updatePlayerMovement(world, dt);
   updateCombat(world, dt);       // may enter 'drafting' on level-up
   updateProjectiles(world, dt);  // applies burn/slow on hit

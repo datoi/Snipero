@@ -117,6 +117,33 @@ export interface Player {
   // the whole rhythm of stop-and-shoot.
   settleDelay: number;
 
+  // ── Hero skill ──
+  //
+  // The active the chosen hero brings. One per hero, so these four fields
+  // describe the whole system: which one, when it can next be cast, and how
+  // long the current cast is still doing something.
+  //
+  // `skill` is a plain string for the same reason `set` is — engine/ names
+  // things, systems/ resolves them. An id no build recognises simply never
+  // becomes castable, which is the right failure for a save written by an
+  // older version.
+  skill: string;
+  skillCd: number;      // seconds until castable; 0 = ready
+  skillCdMax: number;   // the full cooldown, so the UI can draw a fraction
+  /**
+   * Seconds left of a timed cast. ZERO FOR MOST SKILLS — the instant ones
+   * (Blink, Quake, Windfall, Salvo) resolve entirely at the moment of the
+   * press and never set it.
+   *
+   * There is one timer rather than one flag per effect because a hero has
+   * exactly one skill and cannot cast a second over the first: the skill id
+   * already says what the timer *means*, so a second field would only ever
+   * restate it. Ask with `skillActive(player, id)` rather than reading it.
+   */
+  skillTimer: number;
+  /** Hero-level multiplier on skill magnitudes. Never on the cooldown. */
+  skillPower: number;
+
   cooldown: number;     // seconds until next shot is allowed
   stillTime: number;    // how long the player has been standing still
 
@@ -412,6 +439,18 @@ export interface Boss {
 export interface InputState {
   axis: Vec2;    // range roughly -1..1
   moving: boolean;
+
+  /**
+   * Seconds of grace left on a skill press waiting to be spent.
+   *
+   * A latch rather than a boolean, because a tap is an EVENT and the frame it
+   * arrives on is not the frame it can necessarily be honoured — the cooldown
+   * may have a fraction of a second left. A boolean would have to be either
+   * dropped on the spot (a press that visibly does nothing) or held forever
+   * (a skill that fires by itself long after you gave up on it). Counting the
+   * grace down gives it a defined lifetime; see CONFIG.skills.bufferTime.
+   */
+  skillHeld: number;
 }
 
 export type RoomPhase = 'fighting' | 'cleared';

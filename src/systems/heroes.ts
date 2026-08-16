@@ -1,5 +1,6 @@
 import { CONFIG } from '../config';
 import { Player } from '../engine/types';
+import type { SkillId } from './skills';
 // Type-only: the roster names a character set, but nothing here should pull the
 // renderer's `require` table into the simulation's module graph.
 import type { CharSet } from '../render/sprites';
@@ -37,6 +38,15 @@ export interface HeroDef {
   color: string;
   unlockCost: number;
   starter?: boolean;
+  /**
+   * The button this hero brings. See systems/skills.ts.
+   *
+   * Every hero has exactly one, and no two share. The passive spread below says
+   * what a hero is good and bad at; the skill is the answer to the trouble that
+   * spread gets them into, which is why they are chosen together rather than
+   * drawn from a common pool.
+   */
+  skill: SkillId;
   /** Applied before gear and talents, so it sets the baseline they scale. */
   apply: (p: Player, power: number) => void;
 }
@@ -67,6 +77,7 @@ export const HEROES: HeroDef[] = [
     color: '#8fae54',
     unlockCost: 0,
     starter: true,
+    skill: 'overwatch',
     apply: (p, power) => {
       p.range *= 1 + up(0.12, power);
       p.maxHp += Math.round(up(15, power));
@@ -80,6 +91,7 @@ export const HEROES: HeroDef[] = [
     set: 'womanGreen',
     color: '#3ecf8f',
     unlockCost: 700,
+    skill: 'blink',
     apply: (p, power) => {
       // The signature. settleDelay is the beat between planting your feet and
       // the first shot; cutting it turns stop-and-shoot into hit-and-run, and
@@ -98,6 +110,7 @@ export const HEROES: HeroDef[] = [
     set: 'manBlue',
     color: '#4c8ff0',
     unlockCost: 900,
+    skill: 'bulwark',
     apply: (p, power) => {
       const shield = Math.round(up(40, power));
       p.shieldMax += shield;
@@ -115,6 +128,7 @@ export const HEROES: HeroDef[] = [
     set: 'survivor',
     color: '#ff7a3c',
     unlockCost: 1200,
+    skill: 'pyre',
     apply: (p, power) => {
       // Starts with a Blaze stack, so burn is the build from room one rather
       // than something the draft has to hand you.
@@ -137,6 +151,7 @@ export const HEROES: HeroDef[] = [
     set: 'hitman',
     color: '#d4b25a',
     unlockCost: 1500,
+    skill: 'mark',
     apply: (p, power) => {
       // Swingy on purpose. Average DPS lands near the starter's; the variance is
       // the point, and it changes what a room feels like — a Kestrel who whiffs
@@ -155,6 +170,7 @@ export const HEROES: HeroDef[] = [
     set: 'manOld',
     color: '#cfc6ae',
     unlockCost: 1800,
+    skill: 'windfall',
     apply: (p, power) => {
       // The economy hero. Gold has real uses mid-run now — the Forge sells a
       // card for it — so a build that collects twice as much of it under half
@@ -172,6 +188,7 @@ export const HEROES: HeroDef[] = [
     set: 'manBrown',
     color: '#b5763f',
     unlockCost: 2100,
+    skill: 'quake',
     apply: (p, power) => {
       // Inverts the whole game: the auto-aim rewards distance, so a hero who
       // can only see close targets has to walk INTO the wave and let it hit him.
@@ -192,6 +209,7 @@ export const HEROES: HeroDef[] = [
     set: 'robot',
     color: '#9fb3c8',
     unlockCost: 2500,
+    skill: 'salvo',
     apply: (p, power) => {
       // Homing plus pierce means cover stops mattering to her offence, which is
       // the one thing no other hero gets to ignore. Paid for per-shot: she needs
@@ -223,5 +241,17 @@ export function applyHero(p: Player, id: HeroId, level: number) {
   p.color = def.color;
   p.set = def.set;
 
-  def.apply(p, heroPower(level));
+  // The skill comes with the hero and starts READY. A run that opens with the
+  // button greyed out teaches the player it is scenery — the first room is
+  // exactly where they should be finding out what it does.
+  const power = heroPower(level);
+  p.skill = def.skill;
+  p.skillCd = 0;
+  p.skillCdMax = 0;
+  p.skillTimer = 0;
+  // Levels scale what the skill DOES and never how often it comes back; see the
+  // note on CONFIG.skills.
+  p.skillPower = power;
+
+  def.apply(p, power);
 }

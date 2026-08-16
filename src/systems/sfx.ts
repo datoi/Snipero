@@ -31,7 +31,9 @@ export type SfxId =
   | 'chestOpen'
   | 'bossIntro'
   | 'bossDeath'
-  | 'telegraph';
+  | 'telegraph'
+  | 'skill'
+  | 'skillReady';
 
 export type HapticId = 'light' | 'medium' | 'heavy';
 

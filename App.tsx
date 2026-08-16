@@ -15,6 +15,7 @@ import { useGameLoop, useWorldValue } from './src/hooks/useGameLoop';
 import { GameCanvas } from './src/render/GameCanvas';
 import { Hud } from './src/ui/Hud';
 import { Joystick } from './src/input/Joystick';
+import { SkillButton } from './src/ui/SkillButton';
 import { RARITY_COLOR, getAbility, stacksOf } from './src/systems/abilities';
 import { chooseAbility, pauseRun, resumeRun } from './src/systems/progression';
 import { MetaMenu } from './src/ui/MetaMenu';
@@ -290,6 +291,11 @@ export default function App() {
           <Text style={styles.pauseIcon}>❚❚</Text>
         </Pressable>
       )}
+
+      {/* Below the joystick for the same reason the pause button is: the stick
+          is an absoluteFill, so anything the player has to be able to hit
+          during play must come after it in the tree. */}
+      {status === 'playing' && <SkillButton world={world} />}
 
 
       {/* Level-up card draft */}
