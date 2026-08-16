@@ -6,9 +6,13 @@ import { StatusBar } from 'expo-status-bar';
 
 import { createWorld, resetWorld, resizeWorld } from './src/systems/world';
 import { useGameLoop, useWorldValue } from './src/hooks/useGameLoop';
-// Skia renderer — needs a development build (see GameCanvasSkia.tsx). Swap to
-// './src/render/GameCanvas' for the RN-Views fallback that runs in Expo Go.
-import { GameCanvas } from './src/render/GameCanvasSkia';
+// RN-Views renderer: runs anywhere, including Expo Go. Slower — it rebuilds a
+// few hundred Views per frame — but it needs no native modules, and Skia is the
+// only dependency Expo Go cannot provide.
+//
+// Swap to './src/render/GameCanvasSkia' once you have a development build; the
+// prop contract is identical and both drive their own repaint off the loop.
+import { GameCanvas } from './src/render/GameCanvas';
 import { Hud } from './src/ui/Hud';
 import { Joystick } from './src/input/Joystick';
 import { RARITY_COLOR, getAbility, stacksOf } from './src/systems/abilities';
