@@ -274,17 +274,22 @@ export default function App() {
 
       <Hud world={world} />
 
+      {/* Always mounted, disabled while an overlay owns the screen — unmounting
+          it mid-gesture is what used to strand the last held direction. */}
+      <Joystick onChange={handleInput} enabled={status === 'playing'} />
+
+      {/* AFTER the joystick, deliberately.
+          The stick is an absoluteFill covering the entire screen so a drag can
+          start anywhere, which means anything painted before it is untappable —
+          the pause button sat underneath and swallowed every press. Later in the
+          tree wins the touch, so anything the player must be able to hit during
+          play belongs below this line. */}
       {status === 'playing' && (
         <Pressable style={styles.pauseBtn} onPress={() => pauseRun(world)} hitSlop={12}>
           <Text style={styles.pauseIcon}>❚❚</Text>
         </Pressable>
       )}
 
-      {/* Always mounted, disabled while an overlay owns the screen — unmounting
-          it mid-gesture is what used to strand the last held direction. */}
-      <Joystick onChange={handleInput} enabled={status === 'playing'} />
-
-      {/* Overlays below are rendered after the stick, so they take the touches. */}
 
       {/* Level-up card draft */}
       {status === 'drafting' && (

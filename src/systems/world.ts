@@ -17,6 +17,7 @@ export function createWorld(w: number, h: number, chapter = 0, endless = false):
       facing: vec(0, -1),
       radius: pc.radius,
       speed: pc.speed,
+      color: pc.color,
       hp: pc.maxHp,
       maxHp: pc.maxHp,
       damage: pc.damage,

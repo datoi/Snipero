@@ -44,6 +44,10 @@ export interface Player {
   hp: number;
   maxHp: number;
 
+  /** Body colour, set by the chosen hero. The rim stays constant so "that's me"
+   *  still reads instantly whatever colour the hero is. */
+  color: string;
+
   // Combat stats (modified live by drafted ability cards).
   damage: number;
   attackRate: number;   // shots per second

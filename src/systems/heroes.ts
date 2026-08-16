@@ -49,7 +49,7 @@ export const HEROES: HeroDef[] = [
     id: 'rook',
     title: 'Rook',
     desc: 'Steady and long-sighted. Nothing to learn, nothing to fear.',
-    color: '#9ad14f',
+    color: '#3ecf5f',
     unlockCost: 0,
     starter: true,
     apply: (p, power) => {
@@ -117,5 +117,12 @@ export function getHero(id: HeroId): HeroDef {
 export function applyHero(p: Player, id: HeroId, level: number) {
   const def = HEROES.find((hero) => hero.id === id);
   if (!def) return; // renamed or removed between builds; the base player stands
+
+  // The body takes the roster colour, so the portrait you picked in the menu is
+  // literally the thing you control. Setting it here rather than inside each
+  // apply() keeps one source of truth — two copies of a colour is how the menu
+  // and the arena end up disagreeing about who you are.
+  p.color = def.color;
+
   def.apply(p, heroPower(level));
 }

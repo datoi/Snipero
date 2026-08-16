@@ -1,7 +1,7 @@
 import { CONFIG } from '../config';
 import { Blast, World } from '../engine/types';
 import { dist } from '../engine/vec';
-import { addShake, emitDeath } from './fx';
+import { emitDeath, shakeAtMost } from './fx';
 import { damageBoss, damageEnemy } from './damage';
 import { damagePlayer } from './playerDamage';
 import { segmentBlocked } from './obstacles';
@@ -31,7 +31,7 @@ export function updateBlasts(world: World, dt: number) {
     else hitEnemies(world, b);
 
     sfx('bossDeath'); // the heaviest boom in the pack until a dedicated one exists
-    addShake(world, CONFIG.fx.shake.blast);
+    shakeAtMost(world, CONFIG.fx.shake.blast);
     emitDeath(world, b.pos, CONFIG.blast.color, 0);
   }
 

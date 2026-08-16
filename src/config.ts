@@ -18,6 +18,15 @@ export const CONFIG = {
     // Ceiling on armour's damage reduction. Well below 1 so no loadout can ever
     // reach immunity — a build that cannot die has no run to play.
     maxResist: 0.55,
+
+    // Fallback body colour. Every hero overrides it; this is what a world built
+    // before applyMeta runs looks like.
+    color: '#3ecf5f',
+
+    // Constant bright rim on the player, whatever the hero colour is. The player
+    // must be findable in one glance in a busy room, and hue alone cannot carry
+    // that once heroes can be orange or blue like the enemies are.
+    rimColor: '#ffffff',
   },
 
   // Weapon firing behaviour that isn't per-item. Only the burst pattern needs
@@ -488,7 +497,11 @@ export const CONFIG = {
       bossSlam: 14,
       bossRadial: 5,
       bossDeath: 20,
-      blast: 12,         // heavy, but under bossSlam — a bomber is not a boss
+      // A single explosion, not a cluster of them — see shakeAtMost. Tuned well
+    // below chargerSlam: blasts are common (every bomber, every Detonate kill,
+    // five per boss bomb volley), and a common event should not hit as hard as
+    // a rare one.
+    blast: 4,
     },
 
     // Red full-screen flash when the player takes damage.

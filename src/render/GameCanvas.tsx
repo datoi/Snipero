@@ -292,7 +292,11 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
           width: player.radius * 2,
           height: player.radius * 2,
           borderRadius: player.radius,
-          backgroundColor: '#3ecf5f',
+          // Hero colour with a constant white rim: heroes span the same hues as
+          // the enemies, so the rim is what says "that's me", not the colour.
+          backgroundColor: player.color,
+          borderWidth: 2.5,
+          borderColor: CONFIG.player.rimColor,
         }}
       />
       {/* facing dot */}

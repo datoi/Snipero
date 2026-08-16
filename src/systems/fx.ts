@@ -116,6 +116,21 @@ export function addShake(world: World, mag: number) {
   f.shake = Math.min(CONFIG.fx.shake.max, f.shake + mag);
 }
 
+// Shake for something that can happen several times in the same instant.
+//
+// Explosions are the case: a boss drops five bombs, and Detonate leaves one
+// behind every kill, so a good volley into a pack fires a whole cluster within
+// a frame or two. Adding each one pinned the screen to the maximum and held it
+// there — the reason a single blast felt like an earthquake was not its own
+// magnitude, it was four more arriving underneath it.
+//
+// Loudest wins instead of summing, so a cluster shakes like one explosion
+// rather than like all of them.
+export function shakeAtMost(world: World, mag: number) {
+  const f = world.fx;
+  if (mag > f.shake) f.shake = Math.min(CONFIG.fx.shake.max, mag);
+}
+
 export function addFlash(world: World, amount: number) {
   const f = world.fx;
   if (amount > f.flash) f.flash = amount; // strongest hit wins; don't stack to solid red

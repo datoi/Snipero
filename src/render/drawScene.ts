@@ -281,9 +281,15 @@ export function drawScene(canvas: SkCanvas, world: World, width: number, height:
     stroke('#60a5fa', 2 + 3 * (player.shield / player.shieldMax), 0.85);
     canvas.drawCircle(player.pos.x, player.pos.y, player.radius + 6, strokePaint);
   }
-  fill('#3ecf5f');
+  // Body takes the hero's colour; the white rim is constant. Heroes can be
+  // orange or blue — the same range as the enemies — so hue alone can't carry
+  // "that's me". The rim is what does, and no enemy has one.
+  fill(player.color);
   canvas.drawCircle(player.pos.x, player.pos.y, player.radius, fillPaint);
-  fill('#0b3d1e');
+  stroke(CONFIG.player.rimColor, 2.5);
+  canvas.drawCircle(player.pos.x, player.pos.y, player.radius - 1, strokePaint);
+
+  fill('#0b1220');
   canvas.drawCircle(
     player.pos.x + player.facing.x * player.radius,
     player.pos.y + player.facing.y * player.radius,
