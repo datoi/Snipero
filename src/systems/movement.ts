@@ -27,7 +27,14 @@ export function updatePlayerMovement(world: World, dt: number) {
   const { player, input } = world;
   if (!input.moving) return; // standing still — no movement (enables stop-to-shoot)
 
-  player.facing = normalize(input.axis);
+  const dir = normalize(input.axis);
+  player.facing = dir;
+  // The player's own heading, recorded separately because combat is about to
+  // overwrite `facing` with the auto-aim the moment they stop. A fresh object
+  // rather than a second reference to `dir`: aliasing the two would make any
+  // future in-place write to one silently move the other.
+  player.moveFacing = { x: dir.x, y: dir.y };
+
   const fromX = player.pos.x;
   const fromY = player.pos.y;
 

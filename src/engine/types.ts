@@ -38,7 +38,31 @@ export type ShotPattern = 'single' | 'arc' | 'burst';
 // The player hero.
 export interface Player {
   pos: Vec2;
+
+  /**
+   * Which way the BODY POINTS. A render concept: it drives the sprite's
+   * rotation and the direction recoil kicks.
+   *
+   * Written by two systems on purpose. Movement turns the hero the way you are
+   * walking; combat then overrides it with whatever the auto-aim locked onto,
+   * because watching the body swing onto its target is how a player learns the
+   * targeting rule. Combat wins, since the only time you are not moving is the
+   * time you are shooting.
+   */
   facing: Vec2;
+
+  /**
+   * Which way the player last CHOSE to go. Written only by movement.
+   *
+   * Exists because `facing` above answers a different question than it looks
+   * like it does. Anything wanting "where does the player intend to go" — a
+   * dash, a blink, anything aimed by the stick rather than by the auto-aim —
+   * must read this instead, or it inherits the auto-aim's target: standing
+   * still is exactly when combat owns `facing`, so a blink that fell back to it
+   * teleported Vera *into* the enemy she was shooting at.
+   */
+  moveFacing: Vec2;
+
   radius: number;
   speed: number;        // px/sec
   hp: number;

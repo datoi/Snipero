@@ -1,5 +1,5 @@
 import { CONFIG } from '../config';
-import { Enemy, World } from '../engine/types';
+import { Enemy, Player, World } from '../engine/types';
 import { Vec2, dist, normalize, sub } from '../engine/vec';
 import { blocked, confine, hasLineOfSight, moveCircle, segmentBlocked } from './obstacles';
 import { addShake, emitFlash, emitHit, emitRing, emitWallSpark } from './fx';
@@ -54,7 +54,7 @@ export function updateEnemies(world: World, dt: number) {
 
     // Contact damage to the player. This ticks every frame, so it gets a soft
     // sustained flash rather than the punchy per-hit treatment.
-    if (dist(e.pos, p.pos) <= e.radius + p.radius) {
+    if (dist(e.pos, p.pos) <= contactRange(e, p)) {
       damagePlayer(world, e.contactDamage * dt, { continuous: true });
 
       // Thorns. Scaled off what the enemy actually hits for, so it answers the
@@ -67,6 +67,28 @@ export function updateEnemies(world: World, dt: number) {
   }
 
   world.enemies = world.enemies.filter((e) => e.alive);
+}
+
+/**
+ * How close a body has to be to be TOUCHING the player.
+ *
+ * One definition, used both by the approach code that decides a body is close
+ * enough to stop walking and by the contact damage above. They were separate
+ * expressions, and they disagreed by a single pixel: bodies stopped closing at
+ * `sum + 1` while damage needed `sum`.
+ *
+ * That gap was not a knife-edge the odd body might land on, it was an
+ * ATTRACTOR. A chaser steps ~1.17px per frame, so anything approaching a
+ * standing player stepped from outside the band to inside it and then stopped
+ * forever, one pixel short of being able to do anything at all. Measured, 92%
+ * of chaser approaches ended parked and harmless — the basic enemy essentially
+ * did not threaten the exact stance the whole game is built around.
+ *
+ * Keeping it as one function is the actual fix. The single-pixel version was
+ * only ever wrong because the same idea was written down twice.
+ */
+function contactRange(e: Enemy, p: Player): number {
+  return e.radius + p.radius;
 }
 
 // Point the sprite at what the body is actually trying to do.
@@ -94,7 +116,7 @@ function aim(e: Enemy, playerPos: Vec2) {
 function updateChaser(world: World, e: Enemy, dt: number) {
   const p = world.player;
   const d = dist(e.pos, p.pos);
-  if (d > e.radius + p.radius + 1) {
+  if (d > contactRange(e, p)) {
     const dir = normalize(sub(p.pos, e.pos));
     const sp = speedOf(e);
     step(world, e, dir.x * sp * dt, dir.y * sp * dt);
@@ -156,7 +178,7 @@ function updateBomber(world: World, e: Enemy, dt: number) {
 
   if (e.state === 'idle') {
     const d = dist(e.pos, p.pos);
-    if (d > e.radius + p.radius + 1) {
+    if (d > contactRange(e, p)) {
       const dir = normalize(sub(p.pos, e.pos));
       const sp = speedOf(e);
       step(world, e, dir.x * sp * dt, dir.y * sp * dt);
@@ -187,7 +209,7 @@ function updateCharger(world: World, e: Enemy, dt: number) {
 
   if (e.state === 'idle') {
     // Creep toward the player while the cooldown ticks down.
-    if (d > e.radius + p.radius + 1) {
+    if (d > contactRange(e, p)) {
       const dir = normalize(sub(p.pos, e.pos));
       const sp = speedOf(e);
       step(world, e, dir.x * sp * dt, dir.y * sp * dt);

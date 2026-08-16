@@ -16,6 +16,10 @@ export function createWorld(w: number, h: number, chapter = 0, endless = false):
     player: {
       pos: vec(w / 2, h / 2),
       facing: vec(0, -1),
+      // Up-screen, toward the exit: the direction a run is notionally headed,
+      // so a skill cast before the player has taken a single step still goes
+      // somewhere sensible rather than nowhere.
+      moveFacing: vec(0, -1),
       radius: pc.radius,
       speed: pc.speed,
       color: pc.color,

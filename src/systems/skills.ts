@@ -56,14 +56,59 @@ export interface SkillDef {
 
 const C = CONFIG.skills;
 
-// Which way a cast points. The stick wins while it is being pushed, because a
-// skill cast mid-run should go where the player is *heading* — `facing` is
-// whatever the auto-aim last swung the body onto, which during a retreat is
-// behind you, and blinking backwards into the pack you are fleeing is not a
-// mistake a player would ever accept as their own.
+// Which way a cast points: where the player is going, never where they happen
+// to be shooting.
+//
+// The live stick wins while it is being pushed. When it is idle the answer is
+// the last direction they actually WALKED — deliberately not `player.facing`,
+// which is the body's rotation and belongs to the auto-aim while shooting.
+//
+// Falling back to `facing` was a real bug, and an instructive one: standing
+// still is not some edge case, it is the game's default stance, and it is
+// precisely when combat owns `facing`. So Blink — Vera's escape, the whole
+// reason to play her — reliably teleported her the last 190px INTO the enemy
+// she was firing at. Her escape button was a suicide button, and only when
+// used the way it was most likely to be used.
 function aimDir(world: World): Vec2 {
   const { input, player } = world;
-  return input.moving ? normalize(input.axis) : player.facing;
+  return input.moving ? normalize(input.axis) : player.moveFacing;
+}
+
+/**
+ * Which way to GET AWAY.
+ *
+ * Blink is an escape, and an escape has a stricter obligation than "point
+ * somewhere defensible": with no stick input it must not carry the player
+ * toward the thing they are escaping. `aimDir` alone does not clear that bar.
+ * It fixed the auto-aim leak, but its idle fallback is the last direction
+ * walked — which is aimed at the enemy whenever the player advanced on
+ * something and stopped, and at run start points up-screen at whatever spawned
+ * there.
+ *
+ * So when the stick is idle there is no player intent to honour, and the skill
+ * supplies the obvious one: run from whatever is nearest. Only with the room
+ * clear does it fall back to the last heading, where any direction is as good
+ * as another and continuing the way you were walking is the least surprising.
+ */
+function escapeDir(world: World): Vec2 {
+  const { input, player } = world;
+  if (input.moving) return normalize(input.axis);
+
+  let nearest: Vec2 | null = null;
+  let bestD = Infinity;
+  for (const t of targets(world)) {
+    const d = dist(player.pos, t.pos);
+    if (d < bestD) { bestD = d; nearest = t.pos; }
+  }
+
+  if (nearest) {
+    const away = sub(player.pos, nearest);
+    // Standing exactly on top of a body: there is no "away", so keep the last
+    // heading rather than normalising a zero vector into NaN and teleporting
+    // the player out of the world.
+    if (Math.hypot(away.x, away.y) > 1e-6) return normalize(away);
+  }
+  return player.moveFacing;
 }
 
 /** Every living body, player-side targeting order. The boss is not in `enemies`. */
@@ -98,7 +143,9 @@ export const SKILLS: SkillDef[] = [
     cooldown: C.blink.cooldown,
     cast: (world, power) => {
       const p = world.player;
-      const dir = aimDir(world);
+      // escapeDir, not aimDir: the stick still steers it, but an idle stick
+      // means "get me out", never "carry on into the thing shooting me".
+      const dir = escapeDir(world);
       const from = { x: p.pos.x, y: p.pos.y };
 
       // Walk the jump backwards until it lands somewhere legal. Only the
