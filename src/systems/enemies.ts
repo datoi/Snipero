@@ -2,7 +2,7 @@ import { CONFIG } from '../config';
 import { Enemy, World } from '../engine/types';
 import { Vec2, dist, normalize, sub } from '../engine/vec';
 import { blocked, confine, hasLineOfSight, moveCircle, segmentBlocked } from './obstacles';
-import { addShake, emitHit, emitWallSpark } from './fx';
+import { addShake, emitFlash, emitHit, emitRing, emitWallSpark } from './fx';
 import { damagePlayer } from './playerDamage';
 import { damageEnemy } from './damage';
 import { spawnBlast } from './blastSpawn';
@@ -22,7 +22,11 @@ export function updateEnemies(world: World, dt: number) {
     if (!e.alive) continue;
 
     if (e.slideTimer > 0) e.slideTimer -= dt;
+    if (e.recoil > 0) e.recoil -= dt;
     trackProgress(e, p.pos, dt);
+
+    const fromX = e.pos.x;
+    const fromY = e.pos.y;
 
     switch (e.kind) {
       case 'shooter':
@@ -42,6 +46,12 @@ export function updateEnemies(world: World, dt: number) {
     // Keep enemies on screen and out of cover.
     confine(e.pos, e.radius, world);
 
+    aim(e, p.pos);
+    // One place for the whole archetype switch above: every kind moves through
+    // a different branch, and measuring the frame's actual displacement here
+    // means none of them has to remember to animate itself.
+    e.gait += Math.hypot(e.pos.x - fromX, e.pos.y - fromY) * CONFIG.fx.gaitPerPx;
+
     // Contact damage to the player. This ticks every frame, so it gets a soft
     // sustained flash rather than the punchy per-hit treatment.
     if (dist(e.pos, p.pos) <= e.radius + p.radius) {
@@ -57,6 +67,27 @@ export function updateEnemies(world: World, dt: number) {
   }
 
   world.enemies = world.enemies.filter((e) => e.alive);
+}
+
+// Point the sprite at what the body is actually trying to do.
+//
+// Deliberately not derived from the frame's displacement, which is what a
+// renderer would reach for and what would look wrong: a chaser wall-following
+// around a pillar travels sideways for a second while still hunting the player,
+// and drawing it facing along the wall makes it look like it gave up. Intent is
+// "the player", except mid-dash, where the charger has committed to a direction
+// and turning to track would undersell the one attack you are meant to sidestep.
+//
+// Mutates in place rather than assigning a fresh vector: this runs for every
+// body every frame, and the whole file is written to keep that allocation-free.
+function aim(e: Enemy, playerPos: Vec2) {
+  const to = e.kind === 'charger' && e.state === 'charging'
+    ? e.chargeDir
+    : sub(playerPos, e.pos);
+  const l = Math.hypot(to.x, to.y);
+  if (l < 1e-6) return; // exactly on top of the player: keep the last heading
+  e.facing.x = to.x / l;
+  e.facing.y = to.y / l;
 }
 
 // ── Chaser: walk straight at the player. ──
@@ -353,6 +384,14 @@ function endSlide(e: Enemy) {
 
 function fireEnemyProjectile(world: World, e: Enemy, dir: { x: number; y: number }) {
   const c = CONFIG.enemies.shooter;
+  e.recoil = CONFIG.fx.recoilTime;
+  emitFlash(
+    world,
+    { x: e.pos.x + dir.x * e.radius, y: e.pos.y + dir.y * e.radius },
+    dir,
+    e.radius * CONFIG.fx.flashSize,
+    CONFIG.enemyProjectile.color,
+  );
   world.enemyProjectiles.push({
     id: world.nextId++,
     pos: { x: e.pos.x, y: e.pos.y },
@@ -406,6 +445,7 @@ export function updateEnemyProjectiles(world: World, dt: number) {
     if (dist(pr.pos, p.pos) <= pr.radius + p.radius) {
       pr.alive = false;
       emitHit(world, pr.pos, pr.damage, normalize(pr.vel));
+      emitRing(world, pr.pos, p.radius * 1.6, CONFIG.enemyProjectile.rimColor);
       damagePlayer(world, pr.damage);
     }
   }

@@ -1,5 +1,5 @@
 import { CONFIG } from '../config';
-import { Fx, World } from '../engine/types';
+import { Enemy, Fx, PopKind, World } from '../engine/types';
 import { Vec2 } from '../engine/vec';
 
 // Cosmetic feedback: particles, floating damage numbers, screen shake, hit
@@ -8,7 +8,7 @@ import { Vec2 } from '../engine/vec';
 // play identically. It would just stop telling you what's happening.
 
 export function makeFx(): Fx {
-  return { particles: [], numbers: [], shake: 0, shakeX: 0, shakeY: 0, flash: 0 };
+  return { particles: [], numbers: [], pops: [], shake: 0, shakeX: 0, shakeY: 0, flash: 0 };
 }
 
 const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
@@ -111,6 +111,71 @@ export function emitMuzzle(world: World, at: Vec2, dir: Vec2) {
   burst(world, at, { ...CONFIG.fx.muzzle, dir, spread: 0.35 });
 }
 
+// ── Pops ──
+//
+// Short-lived flourishes: a muzzle flash, an impact ring, a body falling over.
+//
+// These are what a static sprite sheet cannot give you. The cast has one frame
+// per pose and no walk cycle, so every bit of motion in this game is either the
+// body moving or one of these — and the difference between a shot that just
+// deletes an enemy and one that flashes, rings and leaves something behind is
+// most of what separates a prototype from a game.
+function pop(
+  world: World,
+  kind: PopKind,
+  at: Vec2,
+  o: { size: number; life: number; color: string; rot?: number; spin?: number; vel?: Vec2; sprite?: string },
+) {
+  const f = world.fx;
+  f.pops.push({
+    id: world.nextId++,
+    kind,
+    pos: { x: at.x, y: at.y },
+    vel: o.vel ? { x: o.vel.x, y: o.vel.y } : { x: 0, y: 0 },
+    rot: o.rot ?? 0,
+    spin: o.spin ?? 0,
+    size: o.size,
+    life: o.life,
+    maxLife: o.life,
+    color: o.color,
+    sprite: o.sprite,
+  });
+  const over = f.pops.length - CONFIG.fx.maxPops;
+  if (over > 0) f.pops.splice(0, over);
+}
+
+/** A bloom of light at the barrel. Oriented, because a gun points somewhere. */
+export function emitFlash(world: World, at: Vec2, dir: Vec2, size: number, color: string) {
+  pop(world, 'flash', at, {
+    size,
+    life: CONFIG.fx.flashLife,
+    color,
+    rot: Math.atan2(dir.y, dir.x) * (180 / Math.PI),
+  });
+}
+
+/** An expanding ring where something landed. */
+export function emitRing(world: World, at: Vec2, size: number, color: string) {
+  pop(world, 'ring', at, { size, life: CONFIG.fx.ringLife, color });
+}
+
+// A body falling over: the sprite keeps its heading, drifts on, spins a little
+// and fades. Purely cosmetic — the enemy is already gone from the simulation by
+// the time this exists, which is what lets a corpse outlive the thing it was.
+export function emitCorpse(world: World, e: Enemy, sprite: string) {
+  const c = CONFIG.fx.corpse;
+  pop(world, 'corpse', e.pos, {
+    size: e.radius,
+    life: c.life,
+    color: e.color,
+    rot: Math.atan2(e.facing.y, e.facing.x) * (180 / Math.PI),
+    spin: rand(-c.spin, c.spin),
+    // Shoved along its own heading, so a charger that died mid-dash carries on.
+    vel: { x: e.facing.x * c.drift, y: e.facing.y * c.drift },
+    sprite,
+  });
+}
+
 export function addShake(world: World, mag: number) {
   const f = world.fx;
   f.shake = Math.min(CONFIG.fx.shake.max, f.shake + mag);
@@ -151,6 +216,17 @@ export function updateFx(world: World, dt: number) {
     p.life -= dt;
   }
   if (f.particles.length) f.particles = f.particles.filter((p) => p.life > 0);
+
+  const popDrag = Math.exp(-CONFIG.fx.corpse.drag * dt);
+  for (const q of f.pops) {
+    q.pos.x += q.vel.x * dt;
+    q.pos.y += q.vel.y * dt;
+    q.vel.x *= popDrag;
+    q.vel.y *= popDrag;
+    q.rot += q.spin * dt;
+    q.life -= dt;
+  }
+  if (f.pops.length) f.pops = f.pops.filter((q) => q.life > 0);
 
   for (const n of f.numbers) {
     n.pos.x += n.vel.x * dt;

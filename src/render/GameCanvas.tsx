@@ -2,10 +2,13 @@ import React from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { Status, World } from '../engine/types';
 import { useFrameTick } from '../hooks/useGameLoop';
-import { bossPhases } from '../systems/boss';
 import { shrineColor } from '../systems/shrine';
 import { CONFIG } from '../config';
-import { THEME } from './theme';
+import {
+  FLOOR, WALL, angleOf, charSize, charSprite, decorSprite, foeSprite, bossSprite,
+} from './sprites';
+import { EDGE_FALLOFF, FLOOR_BACKSTOP, floorFor, themeFor } from './theme';
+import { BodyAnim, bodyAnim } from './anim';
 
 // Outline color for a body carrying a debuff — burn reads over slow, since it's
 // the one actively killing. Returns null when the body is clean.
@@ -15,21 +18,114 @@ function statusTint(s: Status): string | null {
   return null;
 }
 
-// Renders the world with plain React Native Views (no Skia / native modules) so
-// it runs in any Expo Go. Placeholder primitives:
-//   green circle = hero, colored squares = enemies (red chaser / orange shooter
-//   / purple charger), white dots = your shots, orange dots = enemy shots.
+// One body, turned to face where it's going.
+//
+// `flash` paints the whole silhouette a flat colour, which is the one thing
+// React Native's tintColor is good at and exactly what a hit needs — the body
+// blows out to white for a few frames and the shape stays readable underneath.
+function Body({
+  source, anim, size, flash,
+}: {
+  source: React.ComponentProps<typeof Image>['source'];
+  anim: BodyAnim;
+  size: number;
+  flash?: string;
+}) {
+  return (
+    <Image
+      source={source}
+      style={{
+        position: 'absolute',
+        left: anim.x - size / 2,
+        top: anim.y - size / 2,
+        width: size,
+        height: size,
+        transform: [{ rotate: `${anim.rotate}deg` }, { scale: anim.scale }],
+        tintColor: flash,
+      }}
+    />
+  );
+}
+
+// Soft contact shadow. Squashed vertically because the camera looks down at an
+// angle, and offset the same way every other shadow is — one light direction for
+// the whole scene, or it stops reading as a single space.
+function Shadow({ x, y, radius, drop }: { x: number; y: number; radius: number; drop: number }) {
+  const r = radius * CONFIG.obstacles.bodyShadow;
+  return (
+    <View
+      style={{
+        position: 'absolute',
+        left: x - r,
+        top: y - r * 0.5 + drop,
+        width: r * 2,
+        height: r,
+        borderRadius: r,
+        backgroundColor: CONFIG.obstacles.shadowColor,
+        opacity: 0.45,
+      }}
+    />
+  );
+}
+
+// A ring drawn flat on the ground under a body. Carries everything that used to
+// be a border on the body itself: who the player is, what a body is suffering
+// from, and what is about to happen. A border can't do that job any more —
+// sprites have their own outlines, and stacking a second one on top just makes
+// the silhouette muddy.
+function Ring({
+  x, y, radius, color, width = 3, opacity = 1,
+}: {
+  x: number; y: number; radius: number; color: string; width?: number; opacity?: number;
+}) {
+  return (
+    <View
+      style={{
+        position: 'absolute',
+        left: x - radius,
+        top: y - radius,
+        width: radius * 2,
+        height: radius * 2,
+        borderRadius: radius,
+        borderWidth: width,
+        borderColor: color,
+        opacity,
+      }}
+    />
+  );
+}
+
+// Renders the world with plain React Native Views and Images (no Skia / native
+// modules) so it runs in any Expo Go.
 //
 // A Skia renderer with the same prop contract lives in GameCanvasSkia.tsx — it
-// draws the whole frame in one canvas instead of a few hundred Views, but needs
-// a development build. Swap the import in App.tsx to use it.
+// draws the whole frame into one canvas instead of a few hundred Views, but
+// needs a development build. Both draw the same scene from the same sprites;
+// the difference is that Skia reads them out of one packed atlas while this one
+// takes a file per sprite, since <Image> cannot slice. sprites.ts resolves both
+// from a single lookup so the two can never disagree about what a hero wears.
 export function GameCanvas({ world }: { world: World; width: number; height: number }) {
   // Same contract as the Skia renderer: the canvas asks the loop for its own
   // repaint rather than riding a re-render of the whole app.
   useFrameTick(60);
 
-  const { player, enemies, projectiles, enemyProjectiles, door, obstacles, pickups, fx } = world;
+  const {
+    player, enemies, projectiles, enemyProjectiles, door, obstacles, decor, pickups, fx,
+  } = world;
   const pr = CONFIG.pickups.radius;
+  const oc = CONFIG.obstacles;
+
+  const theme = themeFor(world.chapter);
+  const floor = FLOOR[floorFor(theme, world.roomType)];
+
+  // Which hands the hero is drawing with. The equipped weapon sets the pose at
+  // run start; the reload is the one moment it changes mid-fight, and showing it
+  // is what turns the Repeater's long gap from "why did I stop shooting" into a
+  // thing the hero is visibly doing.
+  const reloading =
+    player.pattern === 'burst' && player.burstLeft === 0 && player.cooldown > 0.25;
+  const heroSprite = charSprite(player.set, reloading ? 'reload' : player.pose);
+  const heroSize = charSize(player.radius);
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
@@ -41,50 +137,82 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
         { transform: [{ translateX: fx.shakeX }, { translateY: fx.shakeY }] },
       ]}
     >
-      {/* Floor. A tiled texture when the theme has one, otherwise a panel a
-          shade lighter than the frame — enough for the arena to read as a room
-          you are standing in rather than an unbounded void. */}
-      <View
-        style={[
-          StyleSheet.absoluteFill,
-          { backgroundColor: THEME.floorPanelColor },
-        ]}
-      >
-        {THEME.floor && (
-          <>
-            {/* Explicit size, not absoluteFill. On iOS `resizeMode="repeat"`
-                only tiles across dimensions it actually knows: given absolute
-                insets alone it drew a single tile in the corner and left the
-                rest of the arena black. */}
-            <Image
-              source={THEME.floor}
-              resizeMode="repeat"
-              style={{
-                position: 'absolute',
-                left: 0,
-                top: 0,
-                width: world.bounds.w,
-                height: world.bounds.h,
-              }}
-            />
-            {/* Knock the tileset back so the floor stays quieter than anything
-                moving on it. See ArenaTheme.floorDim. */}
-            <View
-              style={[
-                StyleSheet.absoluteFill,
-                { backgroundColor: '#000000', opacity: THEME.floorDim },
-              ]}
-            />
-          </>
-        )}
+      {/* Floor — the chapter's ground, tiled across the whole arena. */}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: FLOOR_BACKSTOP }]}>
+        {/* Explicit size, not absoluteFill. On iOS `resizeMode="repeat"` only
+            tiles across dimensions it actually knows: given absolute insets
+            alone it drew a single tile in the corner and left the rest of the
+            arena black. */}
+        <Image
+          source={floor}
+          resizeMode="repeat"
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: world.bounds.w,
+            height: world.bounds.h,
+          }}
+        />
+        {/* Knock the tileset back so the floor stays quieter than anything
+            moving on it. See ArenaTheme.floorDim. */}
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: '#000000', opacity: theme.floorDim },
+          ]}
+        />
       </View>
+
+      {/* Light falling off at the walls the camera cannot show. Four stacked
+          bands per edge rather than a gradient, because a gradient needs a
+          native dependency and five flat steps are indistinguishable from one
+          at this size. See EDGE_FALLOFF. */}
+      {Array.from({ length: EDGE_FALLOFF.bands }, (_, i) => {
+        const b = EDGE_FALLOFF.start + i * EDGE_FALLOFF.step;
+        const opacity = EDGE_FALLOFF.alpha - i * EDGE_FALLOFF.fade;
+        if (opacity <= 0) return null;
+        const { w, h } = world.bounds;
+        const edge = { position: 'absolute' as const, backgroundColor: '#000000', opacity };
+        return (
+          <React.Fragment key={`edge${i}`}>
+            <View style={[edge, { left: 0, top: 0, width: w, height: b }]} />
+            <View style={[edge, { left: 0, top: h - b, width: w, height: b }]} />
+            <View style={[edge, { left: 0, top: 0, width: b, height: h }]} />
+            <View style={[edge, { left: w - b, top: 0, width: b, height: h }]} />
+          </React.Fragment>
+        );
+      })}
+
+      {/* Litter — oil, glass, leaves. Under everything, including cover: it is
+          texture on the ground, and anything that reads as an object down here
+          reads as an object the player should be able to walk around. */}
+      {decor.map((d, i) => {
+        if (!d.flat) return null;
+        const src = decorSprite(d.id);
+        if (!src) return null;
+        return (
+          <Image
+            key={`flat${i}`}
+            source={src}
+            style={{
+              position: 'absolute',
+              left: d.pos.x - d.size / 2,
+              top: d.pos.y - d.size / 2,
+              width: d.size,
+              height: d.size,
+              opacity: 0.38,
+              transform: [{ rotate: `${d.rot}deg` }],
+            }}
+          />
+        );
+      })}
 
       {/* Cover — drawn first so every actor sits on top of it.
           Three layers give it height: a shadow it casts on the floor, the face
           itself, and a lit top edge. Flat rectangles read as holes in the floor;
           these read as things standing on it. */}
       {obstacles.map((o, i) => {
-        const oc = CONFIG.obstacles;
         const left = o.pos.x - o.w / 2;
         const top = o.pos.y - o.h / 2;
         return (
@@ -114,10 +242,15 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
                 width: o.w,
                 height: o.h,
                 borderRadius: 6,
-                backgroundColor: oc.color,
+                backgroundColor: theme.cover.side,
               }}
             />
-            {/* Top face, lifted. This is the surface the camera looks down at. */}
+            {/* Top face, lifted. This is the surface the camera looks down at,
+                and it is made of the room's own wall — which is what stops a
+                piece of cover reading as furniture dropped on the floor.
+                Bands run the LONG way: a wide block gets horizontal banding and
+                a tall one vertical, so a low wall reads as a length of wall
+                rather than as a stack of panels lying on its side. */}
             <View
               style={{
                 position: 'absolute',
@@ -127,32 +260,51 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
                 height: o.h,
                 borderRadius: 6,
                 overflow: 'hidden',
-                backgroundColor: oc.topColor,
+                backgroundColor: theme.cover.side,
                 borderTopWidth: 2,
-                borderTopColor: oc.edgeColor,
+                borderTopColor: theme.cover.edge,
               }}
             >
-              {THEME.obstacle && (
-                <>
-                  {/* Explicit size for the same reason the floor needs it —
-                      `repeat` tiles only across dimensions it knows, and with
-                      absolute insets alone it filled part of the block and left
-                      the rest bare, which read as a huge dark side face. */}
-                  <Image
-                    source={THEME.obstacle}
-                    resizeMode="repeat"
-                    style={{ position: 'absolute', left: 0, top: 0, width: o.w, height: o.h }}
-                  />
-                  <View
-                    style={[
-                      StyleSheet.absoluteFill,
-                      { backgroundColor: '#000000', opacity: THEME.obstacleDim },
-                    ]}
-                  />
-                </>
-              )}
+              {/* Explicit size for the same reason the floor needs it —
+                  `repeat` tiles only across dimensions it actually knows, and
+                  with absolute insets alone it fills part of the block and
+                  leaves the rest bare. */}
+              <Image
+                source={WALL[theme.cover.material][o.w >= o.h ? 'along' : 'across']}
+                resizeMode="repeat"
+                style={{ position: 'absolute', left: 0, top: 0, width: o.w, height: o.h }}
+              />
+              <View
+                style={[
+                  StyleSheet.absoluteFill,
+                  { backgroundColor: '#000000', opacity: theme.cover.dim },
+                ]}
+              />
             </View>
           </React.Fragment>
+        );
+      })}
+
+      {/* Whatever is stacked on the cover — crates, boulders, shipping boxes.
+          The block underneath keeps the silhouette you aim around; this is only
+          what it is made of. */}
+      {decor.map((d, i) => {
+        if (d.flat) return null;
+        const src = decorSprite(d.id);
+        if (!src) return null;
+        return (
+          <Image
+            key={`prop${i}`}
+            source={src}
+            style={{
+              position: 'absolute',
+              left: d.pos.x - d.size / 2,
+              top: d.pos.y - d.size / 2,
+              width: d.size,
+              height: d.size,
+              transform: [{ rotate: `${d.rot}deg` }],
+            }}
+          />
         );
       })}
 
@@ -246,40 +398,28 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
       })}
 
       {/* Boss */}
-      {world.boss && world.boss.alive && (
-        <>
-          {/* telegraph ring while winding up an attack */}
-          {world.boss.state === 'windup' && (
-            <View
-              style={{
-                position: 'absolute',
-                left: world.boss.pos.x - world.boss.radius - 10,
-                top: world.boss.pos.y - world.boss.radius - 10,
-                width: (world.boss.radius + 10) * 2,
-                height: (world.boss.radius + 10) * 2,
-                borderRadius: world.boss.radius + 10,
-                borderWidth: 4,
-                borderColor: '#ffffff',
-              }}
+      {world.boss && world.boss.alive && (() => {
+        const b = world.boss;
+        const tint = statusTint(b.status);
+        return (
+          <React.Fragment>
+            <Shadow x={b.pos.x} y={b.pos.y} radius={b.radius} drop={8} />
+            {tint && <Ring x={b.pos.x} y={b.pos.y} radius={b.radius + 3} color={tint} width={4} />}
+            {/* telegraph ring while winding up an attack */}
+            {b.state === 'windup' && (
+              <Ring x={b.pos.x} y={b.pos.y} radius={b.radius + 10} color="#ffffff" width={4} />
+            )}
+            {/* The sprite is baked once per phase, so the colour that says "this
+                fight just got faster" survives without flattening the body. */}
+            <Body
+              source={bossSprite(b.variant, b.phase)}
+              anim={bodyAnim(b.pos, b.facing, b.gait, b.recoil, b.hitFlash, b.radius)}
+              size={charSize(b.radius, 1.05)}
+              flash={b.hitFlash > 0 ? '#ffffff' : undefined}
             />
-          )}
-          <View
-            style={{
-              position: 'absolute',
-              left: world.boss.pos.x - world.boss.radius,
-              top: world.boss.pos.y - world.boss.radius,
-              width: world.boss.radius * 2,
-              height: world.boss.radius * 2,
-              borderRadius: 10,
-              // Blown out to white for a few frames after every hit.
-              backgroundColor:
-                world.boss.hitFlash > 0 ? '#ffffff' : bossPhases(world.boss)[world.boss.phase].color,
-              borderWidth: statusTint(world.boss.status) ? 4 : 0,
-              borderColor: statusTint(world.boss.status) ?? undefined,
-            }}
-          />
-        </>
-      )}
+          </React.Fragment>
+        );
+      })()}
 
       {/* blast telegraphs — under the actors so bodies stay readable on top */}
       {world.blasts.map((b) => {
@@ -311,55 +451,25 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
           Math.floor(e.stateTimer * 12) % 2 === 0;
         return (
         <React.Fragment key={e.id}>
-          {/* Contact shadow. Squashed vertically because the camera looks down
-              at an angle, and offset the same way every other shadow is. */}
-          <View
-            style={{
-              position: 'absolute',
-              left: e.pos.x - e.radius * CONFIG.obstacles.bodyShadow,
-              top: e.pos.y - e.radius * CONFIG.obstacles.bodyShadow * 0.5 + 5,
-              width: e.radius * 2 * CONFIG.obstacles.bodyShadow,
-              height: e.radius * CONFIG.obstacles.bodyShadow,
-              borderRadius: e.radius,
-              backgroundColor: CONFIG.obstacles.shadowColor,
-              opacity: 0.45,
-            }}
-          />
+          <Shadow x={e.pos.x} y={e.pos.y} radius={e.radius} drop={5} />
+          {tint && <Ring x={e.pos.x} y={e.pos.y} radius={e.radius + 2} color={tint} />}
           {/* charger / bomber telegraph: white ring while winding up */}
           {(e.kind === 'charger' || e.kind === 'bomber') && e.state === 'windup' && (
-            <View
-              style={{
-                position: 'absolute',
-                left: e.pos.x - e.radius - 6,
-                top: e.pos.y - e.radius - 6,
-                width: (e.radius + 6) * 2,
-                height: (e.radius + 6) * 2,
-                borderRadius: e.radius + 6,
-                borderWidth: 3,
-                borderColor: '#ffffff',
-              }}
-            />
+            <Ring x={e.pos.x} y={e.pos.y} radius={e.radius + 6} color="#ffffff" />
           )}
-          {/* body */}
-          <View
-            style={{
-              position: 'absolute',
-              left: e.pos.x - e.radius,
-              top: e.pos.y - e.radius,
-              width: e.radius * 2,
-              height: e.radius * 2,
-              backgroundColor: e.hitFlash > 0 ? '#ffffff' : lit ? CONFIG.blast.color : e.color,
-              borderRadius: e.kind === 'shooter' || e.kind === 'bomber' ? e.radius : 4,
-              borderWidth: tint ? 3 : 0,
-              borderColor: tint ?? undefined,
-            }}
+          <Body
+            source={foeSprite(e.kind)}
+            anim={bodyAnim(e.pos, e.facing, e.gait, e.recoil, e.hitFlash, e.radius)}
+            size={charSize(e.radius)}
+            flash={e.hitFlash > 0 ? '#ffffff' : lit ? CONFIG.blast.color : undefined}
           />
-          {/* health bar */}
+          {/* health bar — deliberately outside Body, so it stays level while the
+              thing it belongs to turns */}
           <View
             style={{
               position: 'absolute',
               left: e.pos.x - e.radius,
-              top: e.pos.y - e.radius - 9,
+              top: e.pos.y - e.radius - 11,
               width: e.radius * 2,
               height: 4,
               backgroundColor: '#000000',
@@ -369,7 +479,7 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
             style={{
               position: 'absolute',
               left: e.pos.x - e.radius,
-              top: e.pos.y - e.radius - 9,
+              top: e.pos.y - e.radius - 11,
               width: e.radius * 2 * Math.max(0, e.hp / e.maxHp),
               height: 4,
               backgroundColor: '#3ecf5f',
@@ -379,7 +489,7 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
         );
       })}
 
-      {/* enemy shots (orange) */}
+      {/* enemy shots (crimson) */}
       {enemyProjectiles.map((p) => (
         <View
           key={p.id}
@@ -399,62 +509,147 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
         />
       ))}
 
-      {/* player shots (white) */}
-      {projectiles.map((p) => (
-        <View
-          key={p.id}
-          style={{
-            position: 'absolute',
-            left: p.pos.x - p.radius,
-            top: p.pos.y - p.radius,
-            width: p.radius * 2,
-            height: p.radius * 2,
-            borderRadius: p.radius,
-            backgroundColor: '#ffffff',
-          }}
-        />
-      ))}
+      {/* Player shots. Stretched along their own velocity rather than drawn as
+          dots: a round shot at 560px/sec is four unrelated circles in four
+          frames, and a streak is one thing travelling. The elongation is the
+          only motion cue a projectile gets. */}
+      {projectiles.map((p) => {
+        const len = p.radius * 2 * CONFIG.fx.tracerStretch;
+        return (
+          <View
+            key={p.id}
+            style={{
+              position: 'absolute',
+              left: p.pos.x - len / 2,
+              top: p.pos.y - p.radius,
+              width: len,
+              height: p.radius * 2,
+              borderRadius: p.radius,
+              backgroundColor: '#ffffff',
+              transform: [{ rotate: `${angleOf(p.vel)}deg` }],
+            }}
+          />
+        );
+      })}
 
-      {/* player — contact shadow first, same light direction as everything else */}
+      {/* Player.
+          A pool of shadow with a bright ring around it, drawn flat on the
+          ground. This is what says "that's me", and it has to work on grass,
+          on rust-orange brick and on pale concrete — which is exactly why it is
+          NOT tinted with the hero's colour. Rook is olive and the Undergrowth is
+          green: an accent-coloured marker camouflaged the one body on screen the
+          player cannot afford to lose. Darkening the floor under the hero works
+          on every floor in the game, because the sprite is always lighter than
+          the hole it is standing in. */}
       <View
         style={{
           position: 'absolute',
-          left: player.pos.x - player.radius * CONFIG.obstacles.bodyShadow,
-          top: player.pos.y - player.radius * CONFIG.obstacles.bodyShadow * 0.5 + 6,
-          width: player.radius * 2 * CONFIG.obstacles.bodyShadow,
-          height: player.radius * CONFIG.obstacles.bodyShadow,
-          borderRadius: player.radius,
+          left: player.pos.x - player.radius - 5,
+          top: player.pos.y - player.radius - 5,
+          width: (player.radius + 5) * 2,
+          height: (player.radius + 5) * 2,
+          borderRadius: player.radius + 5,
           backgroundColor: CONFIG.obstacles.shadowColor,
-          opacity: 0.5,
+          opacity: 0.38,
         }}
       />
-      <View
-        style={{
-          position: 'absolute',
-          left: player.pos.x - player.radius,
-          top: player.pos.y - player.radius,
-          width: player.radius * 2,
-          height: player.radius * 2,
-          borderRadius: player.radius,
-          // Hero colour with a constant white rim: heroes span the same hues as
-          // the enemies, so the rim is what says "that's me", not the colour.
-          backgroundColor: player.color,
-          borderWidth: 2.5,
-          borderColor: CONFIG.player.rimColor,
-        }}
+      <Ring
+        x={player.pos.x}
+        y={player.pos.y}
+        radius={player.radius + 5}
+        color={CONFIG.player.rimColor}
+        width={3}
       />
-      {/* facing dot */}
-      <View
-        style={{
-          position: 'absolute',
-          left: player.pos.x + player.facing.x * player.radius - 4,
-          top: player.pos.y + player.facing.y * player.radius - 4,
-          width: 8,
-          height: 8,
-          borderRadius: 4,
-          backgroundColor: '#0b3d1e',
-        }}
+      {/* Shield reads as a second ring outside it, thinning as it is spent, so
+          the buffer is visible without another bar competing with the HUD. */}
+      {player.shieldMax > 0 && player.shield > 0 && (
+        <Ring
+          x={player.pos.x}
+          y={player.pos.y}
+          radius={player.radius + 10}
+          color="#60a5fa"
+          width={2 + 3 * (player.shield / player.shieldMax)}
+          opacity={0.85}
+        />
+      )}
+      <Shadow x={player.pos.x} y={player.pos.y} radius={player.radius} drop={6} />
+      <Body
+        source={heroSprite}
+        anim={bodyAnim(player.pos, player.facing, player.gait, player.recoil, 0, player.radius)}
+        size={heroSize}
       />
+
+      {/* Flourishes — muzzle blooms, impact rings, and bodies falling over.
+          Drawn after the cast so a flash sits in front of the gun that made it
+          and a corpse tumbles over the floor rather than under it. */}
+      {fx.pops.map((q) => {
+        const t = q.life / q.maxLife; // 1 at spawn, 0 at death
+
+        if (q.kind === 'corpse') {
+          const src = foeSprite(q.sprite ?? '');
+          // Shrinks as it fades, so a body reads as sinking out of the room
+          // rather than as a sprite someone turned the opacity down on.
+          const size = charSize(q.size) * (1 - CONFIG.fx.corpse.sink * (1 - t));
+          return (
+            <Image
+              key={`pop${q.id}`}
+              source={src}
+              style={{
+                position: 'absolute',
+                left: q.pos.x - size / 2,
+                top: q.pos.y - size / 2,
+                width: size,
+                height: size,
+                opacity: t,
+                transform: [{ rotate: `${q.rot}deg` }],
+              }}
+            />
+          );
+        }
+
+        if (q.kind === 'ring') {
+          // Expands as it fades. Reads as the impact travelling outward, which
+          // is the one thing a static hit spark cannot say.
+          const r = q.size * (0.35 + 0.65 * (1 - t));
+          return (
+            <View
+              key={`pop${q.id}`}
+              style={{
+                position: 'absolute',
+                left: q.pos.x - r,
+                top: q.pos.y - r,
+                width: r * 2,
+                height: r * 2,
+                borderRadius: r,
+                borderWidth: 2,
+                borderColor: q.color,
+                opacity: t * 0.9,
+              }}
+            />
+          );
+        }
+
+        // flash: a bloom at the barrel, stretched along the shot and gone in
+        // three frames. Longer than that and a high fire rate becomes a strobe.
+        const w = q.size * (0.5 + 0.5 * t);
+        const h = q.size * 0.5 * t;
+        return (
+          <View
+            key={`pop${q.id}`}
+            style={{
+              position: 'absolute',
+              left: q.pos.x - w / 2,
+              top: q.pos.y - h / 2,
+              width: w,
+              height: h,
+              borderRadius: h / 2,
+              backgroundColor: q.color,
+              opacity: t,
+              transform: [{ rotate: `${q.rot}deg` }],
+            }}
+          />
+        );
+      })}
 
       {/* Particles — sparks, stone chips, death bursts. Fade out over their life. */}
       {fx.particles.map((p) => (

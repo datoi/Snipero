@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { WEAPON_ICON } from '../render/sprites';
 import {
   GEAR_RARITY_COLOR,
   GearDef,
@@ -66,7 +67,13 @@ export function GearMenu({ meta, onUnlock, onUpgrade, onEquip }: Props) {
 
           return (
             <View key={def.id} style={[styles.card, { borderColor: rarity }]}>
-              <View style={[styles.chip, { backgroundColor: def.color }]} />
+              {/* Weapons show the thing itself; armour and rings keep the plain
+                  colour chip. That asymmetry is on purpose — the weapon is the
+                  only slot that changes how the run *plays*, so it is the only
+                  one worth spending a picture on. */}
+              <View style={[styles.chip, { backgroundColor: def.color }]}>
+                {def.icon && <Image source={WEAPON_ICON[def.icon]} style={styles.chipArt} />}
+              </View>
 
               <View style={{ flex: 1 }}>
                 <View style={styles.head}>
@@ -140,7 +147,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#1d212a', borderWidth: 2, borderRadius: 14,
     padding: 12, marginVertical: 6,
   },
-  chip: { width: 30, height: 30, borderRadius: 8, marginRight: 12 },
+  chip: {
+    width: 38, height: 38, borderRadius: 8, marginRight: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  // The weapon sprites are wide and flat (a 19x10 original), so they are laid
+  // across the chip rather than fitted inside it.
+  chipArt: { width: 34, height: 18, resizeMode: 'contain' },
 
   head: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
   title: { color: '#ffffff', fontSize: 16, fontWeight: '700' },

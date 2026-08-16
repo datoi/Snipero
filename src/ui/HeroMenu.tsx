@@ -1,6 +1,7 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { charSprite } from '../render/sprites';
 import { HEROES, HeroDef, MAX_HERO_LEVEL, heroUpgradeCost } from '../systems/heroes';
 import {
   MetaState,
@@ -32,7 +33,20 @@ export function HeroMenu({ meta, onUnlock, onUpgrade, onSelect }: Props) {
 
         return (
           <View key={def.id} style={[styles.card, { borderColor: def.color }]}>
-            <View style={[styles.portrait, { backgroundColor: def.color }]} />
+            {/* The actual body you'll be controlling, on a disc of its accent
+                colour. A locked hero is shown as a silhouette rather than hidden:
+                the roster is a thing to want, and you cannot want a grey square.
+                Turned to face down the card, since the sprite is drawn facing
+                east and a portrait staring at the text beside it looks odd. */}
+            <View style={[styles.portrait, { backgroundColor: def.color }]}>
+              <Image
+                source={charSprite(def.set, 'stand')}
+                style={[
+                  styles.portraitArt,
+                  { tintColor: owned ? undefined : '#11141b' },
+                ]}
+              />
+            </View>
 
             <View style={{ flex: 1 }}>
               <View style={styles.head}>
@@ -90,7 +104,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#1d212a', borderWidth: 2, borderRadius: 14,
     padding: 12, marginVertical: 6,
   },
-  portrait: { width: 38, height: 38, borderRadius: 19, marginRight: 12 },
+  portrait: {
+    width: 44, height: 44, borderRadius: 22, marginRight: 12,
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+  },
+  // Larger than the disc it sits in: the sprite is baked on a canvas with room
+  // for a rifle, so drawn to fit the body ends up tiny. Overdrawing crops the
+  // empty margin against the disc instead.
+  portraitArt: { width: 74, height: 74, transform: [{ rotate: '90deg' }] },
 
   head: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
   title: { color: '#ffffff', fontSize: 17, fontWeight: '800' },

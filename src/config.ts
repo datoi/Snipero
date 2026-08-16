@@ -4,7 +4,15 @@ import { BossAttackId, EnemyKind } from './engine/types';
 // data assets. Change these numbers to re-balance; no logic edits needed.
 export const CONFIG = {
   player: {
-    radius: 18,
+    // Bodies are small relative to the arena, and deliberately.
+    //
+    // The whole game is about reading a room while standing still: where the
+    // gaps are, which lane a charger is about to take, whether there is space
+    // behind you. A hero that fills a tenth of the screen leaves nothing to
+    // read — the arena stops being a space and becomes a corridor. Every body
+    // radius in this file was cut by roughly a quarter for that reason, so the
+    // ratios between them are unchanged and only the scale moved.
+    radius: 13,
     speed: 230,              // px/sec
     maxHp: 100,
     damage: 20,              // base projectile damage
@@ -19,13 +27,19 @@ export const CONFIG = {
     // reach immunity — a build that cannot die has no run to play.
     maxResist: 0.55,
 
-    // Fallback body colour. Every hero overrides it; this is what a world built
-    // before applyMeta runs looks like.
-    color: '#3ecf5f',
+    // Fallback appearance, matching the starter hero. Every hero and every
+    // weapon overrides these, but this is a real frame and not a theoretical
+    // one: createWorld draws before the save has finished loading, so a
+    // mismatched default is a hero that visibly flickers into someone else.
+    color: '#8fae54',
+    set: 'soldier',
+    pose: 'gun',
 
-    // Constant bright rim on the player, whatever the hero colour is. The player
-    // must be findable in one glance in a busy room, and hue alone cannot carry
-    // that once heroes can be orange or blue like the enemies are.
+    // The ring drawn on the ground under the player. Constant, and deliberately
+    // not the hero's colour: every body in the arena is now one of the same nine
+    // character sprites, so neither shape nor hue can say "that's me" on its
+    // own, and an accent-tinted marker camouflages whichever hero happens to
+    // match the floor. Nothing else in the game draws a ring like this.
     rimColor: '#ffffff',
   },
 
@@ -66,7 +80,7 @@ export const CONFIG = {
     } as Record<'common' | 'rare' | 'epic' | 'legendary', [number, number]>,
   },
   projectile: {
-    radius: 6,
+    radius: 5,
     speed: 560,              // px/sec
     life: 2,                 // seconds before it despawns
   },
@@ -166,10 +180,14 @@ export const CONFIG = {
     //
     // Measured in distance rather than seconds on purpose: a frosted body covers
     // far less ground per second, and a time limit would declare it stuck for
-    // being slowed. Comfortably longer than a legitimate traverse — the tallest
-    // face in the layout table is ~170px and the long way round a box is ~210px
-    // — but short enough to catch a body wobbling against a corner, which covers
-    // ground at a crawl and would otherwise sit there for half a minute.
+    // being slowed. Comfortably longer than a legitimate traverse — the layout
+    // table's tallest face is well under 100px now that cover is authored as
+    // many small blocks — but short enough to catch a body wobbling against a
+    // corner, which covers ground at a crawl and would otherwise sit there for
+    // half a minute. Deliberately left generous rather than retuned down with
+    // the block sizes: the cost of being slow to notice a wedged body is a few
+    // seconds, and the cost of being too eager is a wave that keeps abandoning
+    // a chase it was winning.
     stuckTravelBudget: 250,
 
     // How far the player must pull away before a body re-baselines its "closest
@@ -179,7 +197,7 @@ export const CONFIG = {
     stuckRebase: 60,
 
     chaser: {
-      radius: 20,
+      radius: 15,
       maxHp: 90,
       speed: 70,
       contactDamage: 12,
@@ -188,7 +206,7 @@ export const CONFIG = {
       goldReward: 3,
     },
     shooter: {
-      radius: 18,
+      radius: 13,
       maxHp: 62,
       speed: 55,
       contactDamage: 8,
@@ -199,7 +217,7 @@ export const CONFIG = {
       attackCooldown: 1.5,     // seconds between shots
       projectileSpeed: 320,
       projectileDamage: 10,
-      projectileRadius: 7,
+      projectileRadius: 6,
     },
     // The bomber exists to sharpen the one tension the whole game is built on:
     // you can only shoot while standing still. Every other archetype punishes
@@ -209,7 +227,7 @@ export const CONFIG = {
     // it means it picks the moment. It is fast and frail on purpose — the answer
     // is always "deal with it now", the cost is always "not right now".
     bomber: {
-      radius: 17,
+      radius: 12,
       maxHp: 46,               // still frail on purpose: it dies fast enough that the
                                // cost of answering it is tempo, not damage
       speed: 128,              // outruns the player's 230 only in a straight line
@@ -225,7 +243,7 @@ export const CONFIG = {
       blastDamage: 26,
     },
     charger: {
-      radius: 24,
+      radius: 18,
       maxHp: 145,
       speed: 55,               // slow creep while winding up
       contactDamage: 18,
@@ -275,10 +293,14 @@ export const CONFIG = {
   //
   // Endless mode replays the deepest chapter's tables and simply never ends; it
   // is the score chase, not the game.
+  // Titles name the place, and the place is one building: three wings of a
+  // facility you are fighting your way down through. Kept in step with the
+  // palettes in src/render/theme.ts — a chapter called Cold Storage that turns
+  // out to be rust-orange is worse than one called nothing at all.
   chapters: [
-    { title: 'The Undergrowth', rooms: 12, boss: 0 },
-    { title: 'Ashfall Reach',   rooms: 16, boss: 1 },
-    { title: 'The Deep Vault',  rooms: 20, boss: 2 },
+    { title: 'The Foundry',  rooms: 12, boss: 0 },
+    { title: 'The Warrens',  rooms: 16, boss: 1 },
+    { title: 'Cold Storage', rooms: 20, boss: 2 },
   ],
 
   // How a run gets harder the deeper it goes.
@@ -315,7 +337,7 @@ export const CONFIG = {
   // Reward rooms. Three offers, one pick.
   shrine: {
     count: 3,
-    radius: 26,
+    radius: 22,
     openRange: 30,
     openTime: 0.4,
     y: 0.42,          // fraction of arena height; spread across the width
@@ -333,7 +355,7 @@ export const CONFIG = {
   },
 
   chest: {
-    radius: 26,
+    radius: 22,
     openRange: 30,     // extra distance past the radii at which it pops open
     openTime: 0.4,     // beat between the lid opening and the reward landing
     gold: 45,
@@ -342,7 +364,7 @@ export const CONFIG = {
   },
 
   boss: {
-    radius: 46,
+    radius: 34,
     maxHp: 1400,
     contactDamage: 22,
     xpReward: 60,
@@ -409,8 +431,8 @@ export const CONFIG = {
       damage: 16, fuse: 0.85, stagger: 0.22,
     },
 
-    radial: { count: 16, telegraph: 0.7, projSpeed: 260, damage: 12, projRadius: 8 },
-    volley: { shots: 5, interval: 0.14, telegraph: 0.5, projSpeed: 360, damage: 10, projRadius: 7 },
+    radial: { count: 16, telegraph: 0.7, projSpeed: 260, damage: 12, projRadius: 7 },
+    volley: { shots: 5, interval: 0.14, telegraph: 0.5, projSpeed: 360, damage: 10, projRadius: 6 },
     charge: { telegraph: 0.7, speed: 680, duration: 0.55, recover: 0.5 },
   },
 
@@ -445,7 +467,7 @@ export const CONFIG = {
   // clearing a room is only half the job — you still have to go collect it,
   // which drags the player out of whatever safe corner they were holding.
   pickups: {
-    radius: 11,
+    radius: 9,
     life: 14,            // seconds on the floor before it fades
     popSpeed: [60, 170], // outward scatter when it drops
     drag: 3.2,           // per-second damping on that pop
@@ -481,6 +503,62 @@ export const CONFIG = {
     maxNumbers: 48,
     particleDrag: 4.5,   // per-second velocity damping
     hitFlashTime: 0.11,  // how long a struck body stays white
+
+    // ── Animation ──
+    //
+    // The cast is a set of static sprites — one frame per pose, no walk cycle,
+    // no death frames. Everything that moves in this game therefore has to be
+    // generated, and these are the numbers that do it. They are the difference
+    // between bodies that slide around like counters on a board and bodies that
+    // look like they are walking, shooting and dying.
+
+    // How far the body rocks side to side as it walks, and how often.
+    //
+    // The gait clock advances with DISTANCE COVERED rather than with time, so
+    // `gaitPerPx` is radians per pixel travelled: a frosted enemy waddles slower
+    // because it is walking slower, and a body wedged against a wall stops
+    // walking rather than marching on the spot. A time-based cycle gets both of
+    // those wrong, and the second one badly — a stuck enemy jogging in place is
+    // the exact tell that an animation is faked.
+    gaitPerPx: 0.075,
+    gaitRollDeg: 5.5,    // peak lean, degrees
+    gaitBob: 0.045,      // peak scale change, as a fraction
+
+    // Kick when a shot leaves, as a fraction of body radius, and how long it
+    // takes to settle. Short: this fires several times a second at a high
+    // attack rate, and anything slower reads as the hero flinching.
+    recoilTime: 0.09,
+    recoilPush: 0.42,
+
+    // Squash on being hit, on top of the white flash. Rides hitFlashTime.
+    hitSquash: 0.22,
+
+    // Muzzle flash and impact ring, both drawn as shapes rather than sprites —
+    // the pack has no VFX art at all, and a bloom and a ring are two draws.
+    flashLife: 0.06,
+    flashSize: 1.55,     // multiples of body radius
+    flashColor: '#ffe9a8',
+    ringLife: 0.22,
+    ringColor: '#ffd7b0',
+
+    // A dead body falls over rather than vanishing. This is the single biggest
+    // animation win available with static art: a kill used to be a sprite
+    // blinking out of existence between two frames.
+    corpse: {
+      life: 0.55,
+      spin: 220,         // deg/sec, randomised in sign
+      drift: 70,         // px/sec along its own heading at the moment of death
+      drag: 3.4,
+      sink: 0.45,        // how far it shrinks over its life, as a fraction
+    },
+
+    // How far a shot is stretched along its own velocity. A round projectile at
+    // 560px/sec lands four unrelated circles in four frames; a streak reads as
+    // one thing travelling, and it is the only motion cue a projectile gets.
+    tracerStretch: 2.6,
+
+    // Hard cap on flourishes, same policy as particles: oldest dropped first.
+    maxPops: 40,
 
     // Floating damage numbers: launched upward, decelerating as they fade.
     number: {
@@ -539,19 +617,17 @@ export const CONFIG = {
     // keeps every pathing and line-of-sight number valid. The visual leans on
     // the same trick Archero does: a fixed overhead camera where objects still
     // show a little of their front face.
-    // One hue, three values. The side face being a *darker shade of the top*
-    // rather than a different colour is what makes a block read as one object
-    // — the first pass had a brown top on a blue-grey base and every piece of
-    // cover looked like two unrelated things stacked.
-    color: '#2b3140',        // side face — in shadow, the part seen edge-on
-    topColor: '#464f63',     // top face — lit, the part the camera looks down at
-    edgeColor: '#5d6880',    // highlight along the very top lip
+    // Cover's three faces are COLOURED per chapter, in src/render/theme.ts —
+    // wood in the Undergrowth, stone in Ashfall, steel in the Vault. Only the
+    // shadow lives here, because a shadow is the absence of the scene's one
+    // light source rather than a property of the thing casting it, and it has to
+    // match the contact shadow under every body.
     shadowColor: '#05070a',
 
     // Small. A tall lift turns the side face into a slab of its own and the
     // block stops reading as one object — the point is a hint of thickness, not
     // a wall drawn in perspective.
-    blockHeight: 7,
+    blockHeight: 6,
 
     // Soft contact shadow under every body, as a fraction of its radius. Bodies
     // without one look pasted onto the floor rather than standing on it.
@@ -561,50 +637,101 @@ export const CONFIG = {
     // than a body can fit down gets snapped flush to the wall instead.
     //
     // This has to clear the LARGEST body that needs to path, not the player's.
-    // Sized at 44 (player diameter 36 + threading room) it let the table leave
-    // 47px lanes, which a charger — 48px across — physically cannot enter. Room
-    // 4's right-hand block did exactly that, and a charger that picked that side
-    // wedged in the gap permanently, because no amount of wall-following gets a
-    // body down a lane narrower than the body. 52 = charger diameter (48) plus
-    // threading room. Raise this if a wider enemy is ever added.
-    minLaneWidth: 52,
+    // Sized too tightly it lets the table leave lanes a charger physically
+    // cannot enter, and a charger that picks that side wedges in the gap
+    // permanently — no amount of wall-following gets a body down a lane
+    // narrower than the body. This is charger diameter plus threading room, so
+    // it moves whenever the charger's radius does. Raise it if a wider enemy is
+    // ever added.
+    minLaneWidth: 42,
 
     // Positions are fractions of the arena (x/y = center, w/h = size), so a
-    // layout reads the same on every screen size. Index matches `rooms` below,
-    // so room N always pairs the same wave with the same cover.
+    // layout reads the same on every screen size.
+    //
+    // MANY SMALL BLOCKS, not a few big ones. A handful of slabs divides a room
+    // into two or three places to stand, and once you have picked one the room
+    // is over. A field of crate-sized cover gives every position a different set
+    // of firing lanes, which is what makes moving worth doing — and it is the
+    // shape the auto-aim's line-of-sight rule was built for, since a shot that
+    // just misses one corner is a decision rather than an accident.
+    //
+    // Sizes are tuned so one block is roughly one prop: a block that wants three
+    // crates stacked on it reads as a shelf, and a block the size of a crate
+    // reads as a crate.
     layouts: [
-      // Room 1 — two low blocks to break up a straight chase.
+      // Room 1 — scattered crates. Nothing to hide behind for long.
       [
-        { x: 0.22, y: 0.45, w: 0.16, h: 0.09 },
-        { x: 0.78, y: 0.45, w: 0.16, h: 0.09 },
+        { x: 0.20, y: 0.40, w: 0.11, h: 0.05 },
+        { x: 0.80, y: 0.40, w: 0.11, h: 0.05 },
+        { x: 0.50, y: 0.50, w: 0.08, h: 0.045 },
+        { x: 0.34, y: 0.62, w: 0.09, h: 0.05 },
+        { x: 0.66, y: 0.62, w: 0.09, h: 0.05 },
+        { x: 0.12, y: 0.72, w: 0.09, h: 0.05 },
+        { x: 0.88, y: 0.72, w: 0.09, h: 0.05 },
       ],
-      // Room 2 — a center wall the shooters will camp behind.
+      // Room 2 — a broken centre line with flanking pillars.
       [
-        { x: 0.50, y: 0.42, w: 0.30, h: 0.08 },
-        { x: 0.15, y: 0.68, w: 0.12, h: 0.15 },
-        { x: 0.85, y: 0.68, w: 0.12, h: 0.15 },
+        { x: 0.50, y: 0.31, w: 0.09, h: 0.04 },
+        { x: 0.38, y: 0.42, w: 0.10, h: 0.05 },
+        { x: 0.62, y: 0.42, w: 0.10, h: 0.05 },
+        { x: 0.15, y: 0.52, w: 0.07, h: 0.09 },
+        { x: 0.85, y: 0.52, w: 0.07, h: 0.09 },
+        { x: 0.30, y: 0.70, w: 0.09, h: 0.05 },
+        { x: 0.70, y: 0.70, w: 0.09, h: 0.05 },
+        { x: 0.50, y: 0.79, w: 0.10, h: 0.045 },
       ],
-      // Room 3 — tall pillars: hard cover against shooters, charger bait.
+      // Room 3 — pillars. Hard cover against shooters, and charger bait.
       [
-        { x: 0.30, y: 0.34, w: 0.09, h: 0.18 },
-        { x: 0.70, y: 0.34, w: 0.09, h: 0.18 },
-        { x: 0.50, y: 0.63, w: 0.22, h: 0.07 },
+        { x: 0.26, y: 0.36, w: 0.06, h: 0.08 },
+        { x: 0.74, y: 0.36, w: 0.06, h: 0.08 },
+        { x: 0.50, y: 0.48, w: 0.06, h: 0.08 },
+        { x: 0.14, y: 0.60, w: 0.06, h: 0.08 },
+        { x: 0.86, y: 0.60, w: 0.06, h: 0.08 },
+        { x: 0.32, y: 0.73, w: 0.10, h: 0.045 },
+        { x: 0.68, y: 0.73, w: 0.10, h: 0.045 },
       ],
-      // Room 4 — a cluttered arena for the big mixed wave.
+      // Room 4 — cluttered, for the big mixed wave.
       [
-        { x: 0.50, y: 0.50, w: 0.10, h: 0.20 },
-        { x: 0.19, y: 0.31, w: 0.14, h: 0.07 },
-        { x: 0.81, y: 0.31, w: 0.14, h: 0.07 },
-        { x: 0.19, y: 0.73, w: 0.14, h: 0.07 },
-        { x: 0.81, y: 0.73, w: 0.14, h: 0.07 },
+        { x: 0.50, y: 0.45, w: 0.07, h: 0.09 },
+        { x: 0.22, y: 0.34, w: 0.10, h: 0.045 },
+        { x: 0.78, y: 0.34, w: 0.10, h: 0.045 },
+        { x: 0.13, y: 0.52, w: 0.08, h: 0.05 },
+        { x: 0.87, y: 0.52, w: 0.08, h: 0.05 },
+        { x: 0.30, y: 0.64, w: 0.08, h: 0.05 },
+        { x: 0.70, y: 0.64, w: 0.08, h: 0.05 },
+        { x: 0.22, y: 0.79, w: 0.09, h: 0.05 },
+        { x: 0.78, y: 0.79, w: 0.09, h: 0.05 },
+      ],
+      // Room 5 — offset scatter, so no two lanes are mirrored.
+      [
+        { x: 0.18, y: 0.38, w: 0.09, h: 0.05 },
+        { x: 0.42, y: 0.47, w: 0.09, h: 0.05 },
+        { x: 0.66, y: 0.37, w: 0.09, h: 0.05 },
+        { x: 0.88, y: 0.49, w: 0.08, h: 0.05 },
+        { x: 0.12, y: 0.61, w: 0.08, h: 0.05 },
+        { x: 0.36, y: 0.71, w: 0.09, h: 0.05 },
+        { x: 0.60, y: 0.63, w: 0.09, h: 0.05 },
+        { x: 0.82, y: 0.73, w: 0.09, h: 0.05 },
+      ],
+      // Room 6 — a corridor down the middle. Easy to hold, awful to be flanked in.
+      [
+        { x: 0.32, y: 0.37, w: 0.06, h: 0.10 },
+        { x: 0.68, y: 0.37, w: 0.06, h: 0.10 },
+        { x: 0.32, y: 0.59, w: 0.06, h: 0.10 },
+        { x: 0.68, y: 0.59, w: 0.06, h: 0.10 },
+        { x: 0.10, y: 0.47, w: 0.07, h: 0.05 },
+        { x: 0.90, y: 0.47, w: 0.07, h: 0.05 },
+        { x: 0.50, y: 0.74, w: 0.12, h: 0.045 },
       ],
     ] as { x: number; y: number; w: number; h: number }[][],
 
     // Boss rooms stay open — the boss needs lanes to charge down, and heavy
     // cover would let the player trivially wall off every attack.
     bossLayout: [
-      { x: 0.17, y: 0.60, w: 0.10, h: 0.09 },
-      { x: 0.83, y: 0.60, w: 0.10, h: 0.09 },
+      { x: 0.14, y: 0.58, w: 0.08, h: 0.05 },
+      { x: 0.86, y: 0.58, w: 0.08, h: 0.05 },
+      { x: 0.30, y: 0.77, w: 0.08, h: 0.045 },
+      { x: 0.70, y: 0.77, w: 0.08, h: 0.045 },
     ] as { x: number; y: number; w: number; h: number }[],
   },
 

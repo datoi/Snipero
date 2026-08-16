@@ -1,87 +1,170 @@
-import type { ImageSourcePropType } from 'react-native';
+// Type-only. A theme names sprites; it does not load them, and nothing that
+// merely wants to read a theme should end up bundling 100 `require` calls.
+import type { DecalId, FloorId, PropId, WallId } from './sprites';
 
-// Where art gets plugged in.
+// What a chapter looks like.
 //
-// Every visual the arena draws goes through here, so swapping a tileset is a
-// change to this file and nothing else. Until textures exist, each field is
-// undefined and the renderers fall back to the flat shapes the game shipped
-// with — which means art can arrive one piece at a time instead of as a big
-// bang, and a missing file degrades to "looks plain" rather than "crashes".
+// Every visual the arena draws goes through here, so re-skinning a chapter is a
+// change to this file and nothing else. The renderers read a theme and never
+// name an image; sprites.ts owns the images and never decides where one goes.
 //
-// ── Adding art ────────────────────────────────────────────────────────────
-// 1. Drop the images somewhere under assets/, e.g. assets/art/floor.png
-// 2. Uncomment the matching line below and point it at the file.
-// 3. That's it. `require` paths are resolved by Metro at bundle time, so they
-//    must be literal strings — you cannot build one from a variable.
+// ── The world these describe ───────────────────────────────────────────────
 //
-// Textures are TILED, not stretched. Cover is authored at arbitrary sizes, so a
-// single sprite scaled to fit would show different pixel density on a tall thin
-// pillar than on a wide low block. A repeating tile looks consistent at any
-// size, which is why tile size matters more than image size when picking a pack.
-
+// One building, three wings. Every arena is an interior: a deck plate floor with
+// walls built out of the same material, lit from above, with the light falling
+// off toward the edges of the room.
+//
+// That is a deliberate replacement for the first attempt, which was open ground
+// — grass, then packed earth — with cover sitting on it. Open ground was the
+// wrong idea twice over. It gave the arena nothing to be the inside OF, so every
+// room read as a patch of field with furniture on it; and it forced cover to be
+// a flat coloured slab, because there is no such thing as a wall in a meadow. A
+// built interior fixes both at once: the floor says where you are, and cover is
+// made of the room, so a block reads as a length of wall instead of a counter
+// someone abandoned.
+//
+// ── Reading the fields ─────────────────────────────────────────────────────
+// Floors are ids into sprites.FLOOR. Textures are TILED, never stretched: cover
+// is authored at arbitrary sizes, so a single sprite scaled to fit would show
+// different pixel density on a tall thin pillar than on a wide low block.
 export interface ArenaTheme {
-  /** Repeating floor texture for the whole arena. */
-  floor?: ImageSourcePropType;
-  /** Repeating texture for cover. Wants to read as solid at a glance. */
-  obstacle?: ImageSourcePropType;
+  /** Repeating floor for combat rooms — where most of a run is spent. */
+  floor: FloorId;
+  /** Boss rooms get their own ground, so the fight has a stage. */
+  bossFloor: FloorId;
+  /** Reward rooms: the breather. Warmer, and quieter than anything you fight on. */
+  rewardFloor: FloorId;
 
   /**
-   * How much black to lay over each texture, 0..1.
+   * How much black to lay over the floor, 0..1.
    *
-   * Asset packs are authored bright, for games with bright UI. This one is dark,
-   * and the arena has to stay quieter than the things moving on it — a floor
-   * that competes with a projectile for attention is a floor that gets someone
+   * The pack is authored bright, for games with bright UI. This one is dark, and
+   * the arena has to stay quieter than the things moving on it — a floor that
+   * competes with a projectile for attention is a floor that gets someone
    * killed. Dimming beats recolouring the source art: it keeps the texture's
-   * detail and lets one tileset suit any palette.
+   * detail and lets one tileset suit any palette. Per-theme because a panelled
+   * floor carries far more contrast of its own than a studded deck does.
    */
   floorDim: number;
-  obstacleDim: number;
 
-  /** Flat colours used when the matching texture is absent. */
+  /**
+   * The floor tile's average colour once `floorDim` has been applied.
+   *
+   * Only for renderers that cannot tile an image — the Skia canvas paints its
+   * whole frame from a pure function and has nowhere to hold a decoded texture
+   * until the atlas finishes loading. Keep it in step with `floor` by eye; it is
+   * a fallback, not a second opinion, and a room drawn in it should look like
+   * the same room with the detail off.
+   */
   floorColor: string;
-  /** Slightly lifted panel so the play area reads as a room, not a void. */
-  floorPanelColor: string;
-  /** Frame around the arena — gives the space an edge to be inside of. */
-  wallColor: string;
+
+  /**
+   * Cover: what the room is built from.
+   *
+   * `material` is tiled across the block's top face, so a piece of cover is made
+   * of the same wall as the room around it. `side` is the dark face left showing
+   * at the bottom, and `edge` is the lit lip along the top — those two are what
+   * give a flat rectangle height, and they are colours rather than textures
+   * because they are a lighting effect, not a material.
+   *
+   * Cover is never drawn as a flat rectangle and never patterned beyond this. It
+   * is a gameplay element, not scenery: you read it to decide where a shot can
+   * go, and you read it while three things are moving. A block lit from one
+   * direction resolves in a glance.
+   */
+  cover: { material: WallId; dim: number; side: string; edge: string };
+
+  /**
+   * What sits on top of cover. Picked from per block, so a room of identical
+   * blocks becomes a room of crates, or drums, or shipping boxes — without the
+   * silhouette the player actually aims around changing at all.
+   */
+  props: PropId[];
+
+  /** Flat litter for the bare floor. Only things you could walk over. */
+  decals: DecalId[];
 }
 
-// Kenney "Top-down Shooter" (CC0). Only the tiles actually used are committed,
-// under assets/art/; the raw 600-file pack is gitignored and re-downloadable
-// from https://kenney.nl/assets.
-//
-// ONE material for floor and cover, separated by brightness rather than by hue.
-//
-// The first attempt used the pack's wooden crate for cover, and it looked like
-// a sticker: bright cartoon brown on a near-black floor, with a blue-grey side
-// face that made every block read as two unrelated objects stacked. The lesson
-// is that an asset pack authored bright cannot be dropped into a dark scene one
-// sprite at a time — the palette has to agree first.
-//
-// Using the same stone for both and letting cover sit brighter than the floor
-// gives depth the way a single light source would, and nothing has to match a
-// second colour scheme.
-export const THEME: ArenaTheme = {
-  floor: require('../../assets/art/floor-stone.png'),
+// App chrome, and the frame behind the arena. Deliberately NOT per-chapter: it
+// is the app's shell, not the room's, and a menu background that changes colour
+// with the chapter reads as a bug.
+export const SHELL_COLOR = '#0e1015';
 
-  // Cover is deliberately UNTEXTURED.
-  //
-  // It is a gameplay element, not scenery: you read it to decide where a shot
-  // can go and where you can hide, and you read it while three things are
-  // moving. A solid block lit from one direction resolves in a glance; a
-  // patterned one has to be parsed. The textured floor behind it does the job
-  // of making the arena feel like a place, and a plain object on a detailed
-  // ground reads better than detail on detail.
-  //
-  // Set this to a tile to try the other way — the plumbing stays in place.
-  // obstacle: require('../../assets/art/floor-stone.png'),
+/** Flat colour under the floor texture, for the frame it never quite reaches. */
+export const FLOOR_BACKSTOP = '#15171c';
 
-  floorDim: 0.86,     // near-black: the floor is background, not decoration
-  obstacleDim: 0.62,
+/**
+ * How far the light falls off at the walls, and how dark it gets there.
+ *
+ * The arena has edges the camera cannot show — a room this size has walls, and
+ * they are off screen. Darkening the last few dozen pixels is what makes the
+ * play area read as enclosed rather than as a rectangle cropped out of an
+ * infinite floor. Purely cosmetic: nothing is confined by it, and the player can
+ * still stand anywhere inside it.
+ */
+export const EDGE_FALLOFF = { bands: 5, step: 7, start: 6, alpha: 0.16, fade: 0.03 };
 
-  floorColor: '#15171c',
-  floorPanelColor: '#191d25',
-  wallColor: '#0e1015',
-};
+export const THEMES: ArenaTheme[] = [
+  // Chapter 1 — The Foundry. Rust and hot metal.
+  {
+    floor: 'plate-rust',
+    bossFloor: 'panel-rust',
+    rewardFloor: 'plate-brass',
+    floorDim: 0.42,
+    floorColor: '#352e29',
+    cover: { material: 'rust', dim: 0.16, side: '#241a12', edge: '#c07434' },
+    props: [
+      'crate', 'crate-small', 'crate-tilt', 'barrel',
+      'drum-orange', 'box-blue', 'rock-a',
+    ],
+    decals: ['oil', 'spill', 'scrap-a', 'scrap-b', 'rubble'],
+  },
 
-/** How many pixels one repeat of a texture covers. Most 2D packs ship 16/32/64. */
-export const TILE_SIZE = 64;
+  // Chapter 2 — The Warrens. Older, warmer, timber and brass.
+  {
+    // Panelled rather than studded like the Foundry, so the middle chapter is a
+    // different room and not the first one in a different colour. Deck plate is
+    // saved for its boss floor, which is then the one place in the wing that
+    // looks like where you came from.
+    floor: 'panel-brass',
+    bossFloor: 'plate-brass',
+    rewardFloor: 'brick-tan',
+    floorDim: 0.5,
+    floorColor: '#4f3923',
+    cover: { material: 'brass', dim: 0.16, side: '#251c14', edge: '#c19a63' },
+    props: [
+      'crate', 'crate-pale', 'crate-tilt', 'box-green',
+      'barrel', 'crate-small', 'plant',
+    ],
+    decals: ['plank', 'planks', 'rubble', 'scrap-a', 'leaves'],
+  },
+
+  // Chapter 3 — Cold Storage. Steel bays, and nothing warm anywhere in it.
+  {
+    floor: 'panel-steel',
+    bossFloor: 'plate-steel',
+    rewardFloor: 'panel-concrete',
+    floorDim: 0.5,
+    floorColor: '#404c4d',
+    cover: { material: 'steel', dim: 0.18, side: '#1b2124', edge: '#93a9ad' },
+    props: [
+      'box-blue', 'box-green', 'crate-pale', 'drum-steel',
+      'crate-small', 'rock-c',
+    ],
+    decals: ['shards-a', 'shards-b', 'oil', 'scrap-a', 'scrap-b'],
+  },
+];
+
+// Endless replays the deepest chapter, and a hand-edited chapter table is the
+// kind of thing that grows an entry before this one does — so wrap rather than
+// index, the same way every other chapter lookup in the codebase does.
+export function themeFor(chapter: number): ArenaTheme {
+  return THEMES[chapter % THEMES.length];
+}
+
+/** The ground for one room, given which kind of room it is. */
+export function floorFor(theme: ArenaTheme, roomType: 'combat' | 'boss' | 'reward'): FloorId {
+  if (roomType === 'boss') return theme.bossFloor;
+  if (roomType === 'reward') return theme.rewardFloor;
+  return theme.floor;
+}

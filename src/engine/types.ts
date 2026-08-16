@@ -44,9 +44,23 @@ export interface Player {
   hp: number;
   maxHp: number;
 
-  /** Body colour, set by the chosen hero. The rim stays constant so "that's me"
-   *  still reads instantly whatever colour the hero is. */
+  /** Accent colour, set by the chosen hero. Identity in the menus — the arena
+   *  marker is deliberately a constant white, see CONFIG.player.rimColor. */
   color: string;
+
+  /**
+   * Which character sprite the hero wears, and what its hands are doing.
+   *
+   * Both are plain strings rather than the renderer's own union types, for the
+   * same reason Pickup.gearId is: engine/ describes the simulation and has no
+   * business importing a module full of `require` calls. The renderer resolves
+   * them and falls back if a save or a table names something it doesn't have.
+   *
+   * `pose` comes from the equipped weapon — it is how "I am holding a rifle"
+   * reaches the screen without the world ever learning what gear is.
+   */
+  set: string;
+  pose: string;
 
   // Combat stats (modified live by drafted ability cards).
   damage: number;
@@ -106,6 +120,14 @@ export interface Player {
   cooldown: number;     // seconds until next shot is allowed
   stillTime: number;    // how long the player has been standing still
 
+  // ── Animation state ──
+  // Cosmetic, and driven by things that actually happened rather than by a
+  // clock: `gait` advances with DISTANCE COVERED, so a slowed body waddles
+  // slower and a body wedged against a wall stops walking on the spot; `recoil`
+  // is set when a shot leaves and ticks down. Nothing reads either back.
+  gait: number;
+  recoil: number;
+
   // Progression.
   level: number;
   xp: number;
@@ -127,6 +149,17 @@ export interface Enemy {
   goldReward: number;
   alive: boolean;
   hitFlash: number;      // cosmetic: seconds of white flash left after a hit
+
+  // Which way the body is pointing, for the sprite. Cosmetic — no system reads
+  // it — but it is derived from real intent rather than from the velocity of the
+  // last frame: a wall-following chaser is still *trying* to reach the player,
+  // and drawing it facing along the wall it happens to be sliding down would
+  // make it look lost when it isn't.
+  facing: Vec2;
+
+  // Animation state, same contract as the player's — see Player.gait.
+  gait: number;
+  recoil: number;
 
   attackTimer: number;      // shooter: seconds until next shot
   projectileDamage: number; // shooter: damage per shot, already depth-scaled
@@ -278,9 +311,33 @@ export interface DamageNumber {
   color: string;
 }
 
+// A short-lived cosmetic flourish drawn as a shape or a sprite.
+//
+// One pool rather than three, because a muzzle flash, an impact ring and a
+// corpse differ only in what they draw and how they ease — they all appear at a
+// point, live under a second, and are never read by anything. Splitting them
+// would be three lists, three caps and three update loops to keep in step.
+export type PopKind = 'flash' | 'ring' | 'corpse';
+
+export interface Pop {
+  id: number;
+  kind: PopKind;
+  pos: Vec2;
+  vel: Vec2;      // corpses keep drifting the way they were pushed
+  rot: number;    // degrees at spawn
+  spin: number;   // degrees/sec, corpses only
+  size: number;
+  life: number;
+  maxLife: number;
+  color: string;
+  /** corpse only: sprite id, resolved by the renderer the way Decor.id is. */
+  sprite?: string;
+}
+
 export interface Fx {
   particles: Particle[];
   numbers: DamageNumber[];
+  pops: Pop[];
   shake: number;     // remaining shake magnitude, px
   shakeX: number;    // this frame's camera offset
   shakeY: number;
@@ -293,6 +350,27 @@ export interface Obstacle {
   pos: Vec2;   // center
   w: number;
   h: number;
+}
+
+// One piece of scenery. Purely cosmetic — nothing collides with it, nothing
+// reads it — so a room can be dressed as heavily as it likes without a single
+// gameplay number moving.
+//
+// `id` is a plain string rather than a sprite, for the same reason Pickup.gearId
+// is: engine/ has no business knowing that a renderer exists, let alone which
+// PNG it reaches for. The renderer resolves it and quietly skips anything it
+// doesn't recognise.
+export interface Decor {
+  id: string;
+  pos: Vec2;    // center
+  size: number; // drawn side length, px
+  rot: number;  // degrees
+  /**
+   * Flat litter that lies ON the floor (true), versus an object that SITS on a
+   * piece of cover (false). The two are drawn in different layers: litter goes
+   * under everything, and a crate has to go over the block it is standing on.
+   */
+  flat: boolean;
 }
 
 // The exit door for a room. Opens once the room is cleared.
@@ -320,6 +398,9 @@ export interface Boss {
   atkTimer: number;                  // scratch: time to next volley shot
   atkShotsLeft: number;              // scratch: volley shots remaining
   chargeDir: Vec2;                   // scratch: locked dash direction
+  facing: Vec2;                      // cosmetic: which way the sprite points
+  gait: number;                      // cosmetic: walk cadence, by distance
+  recoil: number;                    // cosmetic: seconds left of firing kick
   hitFlash: number;                  // cosmetic: white flash after a hit
   alive: boolean;
   status: Status;                    // burn / slow left on it by player shots
@@ -343,6 +424,7 @@ export interface World {
   enemyProjectiles: Projectile[];  // enemies' shots
   door: Door;
   obstacles: Obstacle[];           // cover for the current room
+  decor: Decor[];                  // scenery dressing the current room
   pickups: Pickup[];               // dropped loot waiting to be collected
   blasts: Blast[];                 // fuses burning down toward a detonation
   boss: Boss | null;

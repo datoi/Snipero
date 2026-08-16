@@ -1,7 +1,7 @@
 import { CONFIG } from '../config';
 import { Boss, Enemy, World } from '../engine/types';
 import { Vec2 } from '../engine/vec';
-import { emitDeath, emitHit, emitNumber, flashHit } from './fx';
+import { emitCorpse, emitDeath, emitHit, emitNumber, flashHit } from './fx';
 import { dropBossLoot, dropLoot } from './pickups';
 import { grantKill } from './progression';
 import { spawnBlast } from './blastSpawn';
@@ -51,6 +51,12 @@ export function damageEnemy(world: World, e: Enemy, amount: number, opts: HitOpt
     e.alive = false;
     sfx('enemyDeath');
     emitDeath(world, e.pos, e.color);
+    // A body, not a disappearance. The enemy is already out of the simulation by
+    // the time this runs — the corpse is pure fx and outlives the thing it was.
+    //
+    // The sprite is named as a plain id and resolved by the renderer, the same
+    // way Decor.id is: nothing under systems/ should hold an image.
+    emitCorpse(world, e, e.kind);
     dropLoot(world, e.pos, e.goldReward);
     grantKill(world, e.xpReward);
 

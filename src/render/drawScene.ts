@@ -1,16 +1,27 @@
 import {
+  BlendMode,
+  ClipOp,
   PaintStyle,
   Skia,
   matchFont,
   type SkCanvas,
   type SkColor,
   type SkFont,
+  type SkImage,
+  type SkPaint,
 } from '@shopify/react-native-skia';
 
 import { CONFIG } from '../config';
 import { Status, World } from '../engine/types';
+import { Vec2 } from '../engine/vec';
 import { bossPhases } from '../systems/boss';
 import { shrineColor } from '../systems/shrine';
+import { FRAMES } from './atlas.gen';
+import {
+  angleOf, bossKey, charKey, charSize, decorKey, floorKey, foeKey, wallKey, TILE_SIZE,
+} from './sprites';
+import { EDGE_FALLOFF, floorFor, themeFor } from './theme';
+import { bodyAnim } from './anim';
 
 // Outline color for a body carrying a debuff — burn reads over slow, since it's
 // the one actively killing. Returns null when the body is clean.
@@ -94,14 +105,152 @@ function strokeRoundRect(
   canvas.drawRRect({ rect: { x, y, width: w, height: h }, rx: r, ry: r }, strokePaint);
 }
 
-export function drawScene(canvas: SkCanvas, world: World, width: number, height: number) {
-  const { player, enemies, projectiles, enemyProjectiles, door, obstacles, pickups, fx } = world;
+// ── Sprites ────────────────────────────────────────────────────────────────
+//
+// Every sprite lives in one atlas texture (assets/art/atlas.png) and is drawn as
+// a sub-rect of it. One texture rather than 108 files because this whole
+// function is recorded into a single SkPicture, and every texture swap inside
+// that recording is a batch Skia cannot merge — so the file-per-sprite shape
+// that suits React Native's <Image> is the worst possible shape here.
+//
+// `atlas` is null until the image finishes decoding, which is a handful of real
+// frames at startup. Everything below therefore has a flat-primitive fallback:
+// the arena is playable and readable from frame one and simply gains its art a
+// moment later, rather than showing an empty canvas.
+const spritePaint = Skia.Paint();
+spritePaint.setAntiAlias(true);
+
+// Painting the whole silhouette one flat colour is what a hit flash is, and a
+// blend-mode colour filter is how Skia says it. Filters are native objects, so
+// the small fixed set of colours the game flashes is built once and kept.
+const tintCache = new Map<string, SkPaint>();
+function tinted(hex: string): SkPaint {
+  let p = tintCache.get(hex);
+  if (p === undefined) {
+    p = Skia.Paint();
+    p.setAntiAlias(true);
+    p.setColorFilter(Skia.ColorFilter.MakeBlend(color(hex), BlendMode.SrcIn));
+    tintCache.set(hex, p);
+  }
+  return p;
+}
+
+/** Draw an atlas sprite into a square centred on (cx, cy). Returns false if the
+ *  atlas isn't ready or the key is unknown, so callers can fall back. */
+function sprite(
+  canvas: SkCanvas,
+  atlas: SkImage | null,
+  key: string | null,
+  cx: number,
+  cy: number,
+  size: number,
+  opts?: { facing?: Vec2; flash?: string; rotate?: number; alpha?: number },
+): boolean {
+  if (!atlas || !key) return false;
+  const f = FRAMES[key];
+  if (!f) return false;
+
+  const paint = opts?.flash ? tinted(opts.flash) : spritePaint;
+  paint.setAlphaf(opts?.alpha ?? 1);
+
+  // A heading is shorthand for "this is an overhead sprite, turn it"; decor
+  // passes a fixed `rotate` instead.
+  const deg = opts?.facing ? angleOf(opts.facing) : opts?.rotate ?? 0;
+
+  const half = size / 2;
+  if (deg !== 0) {
+    canvas.save();
+    canvas.translate(cx, cy);
+    canvas.rotate(deg, 0, 0);
+    canvas.drawImageRect(
+      atlas,
+      { x: f.x, y: f.y, width: f.w, height: f.h },
+      { x: -half, y: -half, width: size, height: size },
+      paint,
+    );
+    canvas.restore();
+  } else {
+    canvas.drawImageRect(
+      atlas,
+      { x: f.x, y: f.y, width: f.w, height: f.h },
+      { x: cx - half, y: cy - half, width: size, height: size },
+      paint,
+    );
+  }
+  return true;
+}
+
+export function drawScene(
+  canvas: SkCanvas,
+  world: World,
+  width: number,
+  height: number,
+  atlas: SkImage | null = null,
+) {
+  const {
+    player, enemies, projectiles, enemyProjectiles, door, obstacles, decor, pickups, fx,
+  } = world;
   const pr = CONFIG.pickups.radius;
+  const theme = themeFor(world.chapter);
 
   // Camera layer — screen shake translates the world, so the damage flash below
   // stays pinned to the screen and never exposes an edge.
   canvas.save();
   canvas.translate(fx.shakeX, fx.shakeY);
+
+  // ── Floor ──
+  //
+  // The theme's measured average colour goes down first, then the real tile over
+  // it. That ordering is not belt-and-braces: the flat colour is what the arena
+  // looks like for the few frames before the atlas finishes decoding, and it is
+  // also what covers the ragged last row and column where the tile grid runs off
+  // the edge of a screen whose size is not a multiple of 64.
+  //
+  // Tiled with a loop rather than a repeating image shader because the tile is a
+  // sub-rect of the atlas, and an image shader repeats the whole texture. ~100
+  // rect draws on one already-bound texture is nothing next to a texture swap.
+  fill(theme.floorColor);
+  rect(canvas, 0, 0, width, height);
+
+  const floor = FRAMES[floorKey(floorFor(theme, world.roomType))];
+  if (atlas && floor) {
+    spritePaint.setAlphaf(1);
+    for (let y = 0; y < height; y += TILE_SIZE) {
+      for (let x = 0; x < width; x += TILE_SIZE) {
+        canvas.drawImageRect(
+          atlas,
+          { x: floor.x, y: floor.y, width: floor.w, height: floor.h },
+          { x, y, width: TILE_SIZE, height: TILE_SIZE },
+          spritePaint,
+        );
+      }
+    }
+    // Knock the tileset back so the floor stays quieter than anything moving on
+    // it — the same dim the Views renderer applies, for the same reason.
+    fill('#000000', theme.floorDim);
+    rect(canvas, 0, 0, width, height);
+  }
+
+  // Light falling off at the walls the camera cannot show — see EDGE_FALLOFF.
+  for (let i = 0; i < EDGE_FALLOFF.bands; i++) {
+    const b = EDGE_FALLOFF.start + i * EDGE_FALLOFF.step;
+    const a = EDGE_FALLOFF.alpha - i * EDGE_FALLOFF.fade;
+    if (a <= 0) break;
+    fill('#000000', a);
+    rect(canvas, 0, 0, width, b);
+    rect(canvas, 0, height - b, width, b);
+    rect(canvas, 0, 0, b, height);
+    rect(canvas, width - b, 0, b, height);
+  }
+
+  // ── Litter — oil, glass, leaves. Under everything, including cover ──
+  for (const d of decor) {
+    if (!d.flat) continue;
+    sprite(canvas, atlas, decorKey(d.id), d.pos.x, d.pos.y, d.size, {
+      rotate: d.rot,
+      alpha: 0.38,
+    });
+  }
 
   // ── Cover — drawn first so every actor sits on top of it ──
   //
@@ -120,13 +269,48 @@ export function drawScene(canvas: SkCanvas, world: World, width: number, height:
     fill(oc.shadowColor, 0.5);
     roundRect(canvas, x + 2, y + 4, o.w, o.h, 6);
 
-    fill(oc.color);
+    fill(theme.cover.side);
     roundRect(canvas, x, y, o.w, o.h, 6);
 
-    fill(oc.topColor);
-    roundRect(canvas, x, y - oc.blockHeight, o.w, o.h, 6);
-    fill(oc.edgeColor);
-    roundRect(canvas, x, y - oc.blockHeight, o.w, 2, 2);
+    // Top face, made of the room's own wall. Bands run the LONG way, so a wide
+    // block reads as a length of wall rather than a stack of panels on its side.
+    const ty = y - oc.blockHeight;
+    fill(theme.cover.side);
+    roundRect(canvas, x, ty, o.w, o.h, 6);
+
+    const wall = FRAMES[wallKey(theme.cover.material, o.w >= o.h)];
+    if (atlas && wall) {
+      // Clipped rather than drawn tile-by-tile to the exact edge: a block is
+      // rarely a whole number of tiles across, and clipping is one op where
+      // per-tile rect maths is one op plus an off-by-one waiting to happen.
+      canvas.save();
+      canvas.clipRRect({ rect: { x, y: ty, width: o.w, height: o.h }, rx: 6, ry: 6 }, ClipOp.Intersect, true);
+      spritePaint.setAlphaf(1);
+      for (let ry = 0; ry < o.h; ry += TILE_SIZE) {
+        for (let rx = 0; rx < o.w; rx += TILE_SIZE) {
+          canvas.drawImageRect(
+            atlas,
+            { x: wall.x, y: wall.y, width: wall.w, height: wall.h },
+            { x: x + rx, y: ty + ry, width: TILE_SIZE, height: TILE_SIZE },
+            spritePaint,
+          );
+        }
+      }
+      fill('#000000', theme.cover.dim);
+      rect(canvas, x, ty, o.w, o.h);
+      canvas.restore();
+    }
+
+    fill(theme.cover.edge);
+    roundRect(canvas, x, ty, o.w, 2, 2);
+  }
+
+  // Whatever is stacked on that cover — crates, boulders, shipping boxes. The
+  // block underneath keeps the silhouette you aim around; this is only what it
+  // is made of.
+  for (const d of decor) {
+    if (d.flat) continue;
+    sprite(canvas, atlas, decorKey(d.id), d.pos.x, d.pos.y, d.size, { rotate: d.rot });
   }
 
   // Contact shadow under a body. Squashed vertically because the camera looks
@@ -234,20 +418,31 @@ export function drawScene(canvas: SkCanvas, world: World, width: number, height:
   if (world.boss && world.boss.alive) {
     const b = world.boss;
     bodyShadow(b.pos.x, b.pos.y, b.radius, 8);
+
+    // Rings go on the ground under the body. They used to be borders on the
+    // body itself, which worked while it was a rounded rectangle — a sprite has
+    // its own outline, and a second one stacked on top only muddies it.
+    const tint = statusTint(b.status);
+    if (tint) {
+      stroke(tint, 4);
+      canvas.drawCircle(b.pos.x, b.pos.y, b.radius + 3, strokePaint);
+    }
     if (b.state === 'windup') {
       stroke('#ffffff', 4);
       canvas.drawCircle(b.pos.x, b.pos.y, b.radius + 10, strokePaint);
     }
-    // Blown out to white for a few frames after every hit.
-    fill(b.hitFlash > 0 ? '#ffffff' : bossPhases(b)[b.phase].color);
-    roundRect(canvas, b.pos.x - b.radius, b.pos.y - b.radius, b.radius * 2, b.radius * 2, 10);
 
-    const tint = statusTint(b.status);
-    if (tint) {
-      stroke(tint, 4);
-      strokeRoundRect(
-        canvas, b.pos.x - b.radius + 2, b.pos.y - b.radius + 2, b.radius * 2 - 4, b.radius * 2 - 4, 8
-      );
+    // The sprite is baked once per phase, so the colour that says "this fight
+    // just got faster" survives without flattening the body.
+    const bAnim = bodyAnim(b.pos, b.facing, b.gait, b.recoil, b.hitFlash, b.radius);
+    const drawn = sprite(
+      canvas, atlas, bossKey(b.variant, b.phase),
+      bAnim.x, bAnim.y, charSize(b.radius, 1.05) * bAnim.scale,
+      { rotate: bAnim.rotate, flash: b.hitFlash > 0 ? '#ffffff' : undefined },
+    );
+    if (!drawn) {
+      fill(b.hitFlash > 0 ? '#ffffff' : bossPhases(b)[b.phase].color);
+      roundRect(canvas, b.pos.x - b.radius, b.pos.y - b.radius, b.radius * 2, b.radius * 2, 10);
     }
   }
 
@@ -265,6 +460,12 @@ export function drawScene(canvas: SkCanvas, world: World, width: number, height:
   // ── Enemies ──
   for (const e of enemies) {
     bodyShadow(e.pos.x, e.pos.y, e.radius, 5);
+
+    const tint = statusTint(e.status);
+    if (tint) {
+      stroke(tint, 3);
+      canvas.drawCircle(e.pos.x, e.pos.y, e.radius + 2, strokePaint);
+    }
     if ((e.kind === 'charger' || e.kind === 'bomber') && e.state === 'windup') {
       stroke('#ffffff', 3);
       canvas.drawCircle(e.pos.x, e.pos.y, e.radius + 6, strokePaint);
@@ -274,29 +475,25 @@ export function drawScene(canvas: SkCanvas, world: World, width: number, height:
     // thing about to explode is the loudest object on screen.
     const lit = e.kind === 'bomber' && e.state === 'windup' &&
       Math.floor(e.stateTimer * 12) % 2 === 0;
+    const flash = e.hitFlash > 0 ? '#ffffff' : lit ? CONFIG.blast.color : undefined;
 
-    fill(e.hitFlash > 0 ? '#ffffff' : lit ? CONFIG.blast.color : e.color);
-    if (e.kind === 'shooter' || e.kind === 'bomber') {
-      canvas.drawCircle(e.pos.x, e.pos.y, e.radius, fillPaint);
-    } else {
-      roundRect(canvas, e.pos.x - e.radius, e.pos.y - e.radius, e.radius * 2, e.radius * 2, 4);
-    }
-
-    const tint = statusTint(e.status);
-    if (tint) {
-      stroke(tint, 3);
+    const a = bodyAnim(e.pos, e.facing, e.gait, e.recoil, e.hitFlash, e.radius);
+    const drawn = sprite(
+      canvas, atlas, foeKey(e.kind), a.x, a.y, charSize(e.radius) * a.scale,
+      { rotate: a.rotate, flash },
+    );
+    if (!drawn) {
+      fill(flash ?? e.color);
       if (e.kind === 'shooter' || e.kind === 'bomber') {
-        canvas.drawCircle(e.pos.x, e.pos.y, e.radius - 1.5, strokePaint);
+        canvas.drawCircle(e.pos.x, e.pos.y, e.radius, fillPaint);
       } else {
-        strokeRoundRect(
-          canvas, e.pos.x - e.radius + 1.5, e.pos.y - e.radius + 1.5, e.radius * 2 - 3, e.radius * 2 - 3, 3
-        );
+        roundRect(canvas, e.pos.x - e.radius, e.pos.y - e.radius, e.radius * 2, e.radius * 2, 4);
       }
     }
 
-    // Health bar.
+    // Health bar. Deliberately drawn after the body and never rotated with it.
     const barX = e.pos.x - e.radius;
-    const barY = e.pos.y - e.radius - 9;
+    const barY = e.pos.y - e.radius - 11;
     fill('#000000');
     rect(canvas, barX, barY, e.radius * 2, 4);
     fill('#3ecf5f');
@@ -313,33 +510,99 @@ export function drawScene(canvas: SkCanvas, world: World, width: number, height:
     canvas.drawCircle(p.pos.x, p.pos.y, p.radius - 1, strokePaint);
   }
 
+  // Player shots, stretched along their own velocity. A round shot at 560px/sec
+  // is four unrelated circles in four frames; a streak is one thing travelling,
+  // and it is the only motion cue a projectile gets.
   fill('#ffffff');
-  for (const p of projectiles) canvas.drawCircle(p.pos.x, p.pos.y, p.radius, fillPaint);
+  for (const p of projectiles) {
+    const len = p.radius * 2 * CONFIG.fx.tracerStretch;
+    canvas.save();
+    canvas.translate(p.pos.x, p.pos.y);
+    canvas.rotate(angleOf(p.vel), 0, 0);
+    roundRect(canvas, -len / 2, -p.radius, len, p.radius * 2, p.radius);
+    canvas.restore();
+  }
 
   // ── Player ──
-  // Shield reads as a ring around the hero that thins as it is spent, so the
+  //
+  // A pool of shadow with a bright ring around it, drawn flat on the ground.
+  // This is what says "that's me", and it has to work on grass, on rust-orange
+  // brick and on pale concrete — which is exactly why it is NOT tinted with the
+  // hero's colour. Rook is olive and the Undergrowth is green: an accent-
+  // coloured marker camouflaged the one body on screen the player cannot afford
+  // to lose. Darkening the floor under the hero works everywhere, because the
+  // sprite is always lighter than the hole it is standing in.
+  fill(oc.shadowColor, 0.38);
+  canvas.drawCircle(player.pos.x, player.pos.y, player.radius + 5, fillPaint);
+  stroke(CONFIG.player.rimColor, 3);
+  canvas.drawCircle(player.pos.x, player.pos.y, player.radius + 5, strokePaint);
+
+  // Shield reads as a second ring outside it, thinning as it is spent, so the
   // buffer is visible without another bar competing with the HUD.
   if (player.shieldMax > 0 && player.shield > 0) {
     stroke('#60a5fa', 2 + 3 * (player.shield / player.shieldMax), 0.85);
-    canvas.drawCircle(player.pos.x, player.pos.y, player.radius + 6, strokePaint);
+    canvas.drawCircle(player.pos.x, player.pos.y, player.radius + 10, strokePaint);
   }
   bodyShadow(player.pos.x, player.pos.y, player.radius, 6);
 
-  // Body takes the hero's colour; the white rim is constant. Heroes can be
-  // orange or blue — the same range as the enemies — so hue alone can't carry
-  // "that's me". The rim is what does, and no enemy has one.
-  fill(player.color);
-  canvas.drawCircle(player.pos.x, player.pos.y, player.radius, fillPaint);
-  stroke(CONFIG.player.rimColor, 2.5);
-  canvas.drawCircle(player.pos.x, player.pos.y, player.radius - 1, strokePaint);
-
-  fill('#0b1220');
-  canvas.drawCircle(
-    player.pos.x + player.facing.x * player.radius,
-    player.pos.y + player.facing.y * player.radius,
-    4,
-    fillPaint
+  // The equipped weapon sets the hero's pose at run start; the reload is the one
+  // moment it changes mid-fight, and showing it is what turns the Repeater's
+  // long gap from "why did I stop shooting" into a thing the hero is visibly
+  // doing.
+  const reloading =
+    player.pattern === 'burst' && player.burstLeft === 0 && player.cooldown > 0.25;
+  const pAnim = bodyAnim(player.pos, player.facing, player.gait, player.recoil, 0, player.radius);
+  const drawnHero = sprite(
+    canvas,
+    atlas,
+    charKey(player.set, reloading ? 'reload' : player.pose),
+    pAnim.x,
+    pAnim.y,
+    charSize(player.radius) * pAnim.scale,
+    { rotate: pAnim.rotate },
   );
+  if (!drawnHero) {
+    fill(player.color);
+    canvas.drawCircle(player.pos.x, player.pos.y, player.radius, fillPaint);
+  }
+
+  // ── Flourishes — muzzle blooms, impact rings, bodies falling over ──
+  //
+  // After the cast, so a flash sits in front of the gun that made it and a
+  // corpse tumbles over the floor rather than under it.
+  for (const q of fx.pops) {
+    const t = q.life / q.maxLife; // 1 at spawn, 0 at death
+
+    if (q.kind === 'corpse') {
+      // Shrinks as it fades, so a body reads as sinking out of the room rather
+      // than as a sprite someone turned the opacity down on.
+      const size = charSize(q.size) * (1 - CONFIG.fx.corpse.sink * (1 - t));
+      sprite(canvas, atlas, foeKey(q.sprite ?? ''), q.pos.x, q.pos.y, size, {
+        rotate: q.rot,
+        alpha: t,
+      });
+      continue;
+    }
+
+    if (q.kind === 'ring') {
+      // Expands as it fades: the impact travelling outward, which is the one
+      // thing a static hit spark cannot say.
+      stroke(q.color, 2, t * 0.9);
+      canvas.drawCircle(q.pos.x, q.pos.y, q.size * (0.35 + 0.65 * (1 - t)), strokePaint);
+      continue;
+    }
+
+    // flash: a bloom at the barrel, stretched along the shot and gone in three
+    // frames. Longer than that and a high fire rate becomes a strobe.
+    const w = q.size * (0.5 + 0.5 * t);
+    const h = q.size * 0.5 * t;
+    fill(q.color, t);
+    canvas.save();
+    canvas.translate(q.pos.x, q.pos.y);
+    canvas.rotate(q.rot, 0, 0);
+    roundRect(canvas, -w / 2, -h / 2, w, h, h / 2);
+    canvas.restore();
+  }
 
   // ── Particles — sparks, stone chips, death bursts ──
   for (const p of fx.particles) {

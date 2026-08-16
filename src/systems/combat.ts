@@ -2,7 +2,7 @@ import { CONFIG } from '../config';
 import { Projectile, World } from '../engine/types';
 import { Vec2, dist, normalize, rotate, sub } from '../engine/vec';
 import { blocked, hasLineOfSight, segmentBlocked } from './obstacles';
-import { emitMuzzle, emitWallSpark } from './fx';
+import { emitFlash, emitMuzzle, emitRing, emitWallSpark } from './fx';
 import { damageBoss, damageEnemy } from './damage';
 import { applyBurn, applyFrost } from './status';
 import { sfx } from './sfx';
@@ -133,6 +133,14 @@ function fireShot(world: World, target: Targetable) {
   const baseDir = normalize(sub(target.pos, p.pos));
   const spread = (p.spreadDeg * Math.PI) / 180;
 
+  // Turn to whatever the auto-aim picked. Cosmetic, but it is the only way the
+  // player can *see* the targeting rule they are playing around: standing still
+  // and watching the hero swing onto the nearest reachable body is what makes
+  // "it fires at the closest thing it can see" a fact you learn rather than one
+  // you read. Movement sets facing too — this simply wins while shooting, which
+  // is the only time you are not moving.
+  p.facing = baseDir;
+
   // Forward spread (multishot).
   //
   // The fan is aimed, not just angled: its width is capped so the OUTERMOST
@@ -174,7 +182,12 @@ function fireShot(world: World, target: Targetable) {
   // One shot sound per volley, not per projectile — multishot would otherwise
   // fire five overlapping copies of the same click.
   sfx('shot');
-  emitMuzzle(world, { x: p.pos.x + baseDir.x * p.radius, y: p.pos.y + baseDir.y * p.radius }, baseDir);
+  const muzzle = { x: p.pos.x + baseDir.x * p.radius, y: p.pos.y + baseDir.y * p.radius };
+  emitMuzzle(world, muzzle, baseDir);
+  emitFlash(world, muzzle, baseDir, p.radius * CONFIG.fx.flashSize, CONFIG.fx.flashColor);
+  // The kick. Every shot in the game passes through here, so this is the single
+  // most-felt piece of animation in the build.
+  p.recoil = CONFIG.fx.recoilTime;
 }
 
 // Widest total fan angle that still keeps every arrow inside the target's
@@ -350,6 +363,9 @@ export function updateProjectiles(world: World, dt: number) {
       if (!e.alive || pr.hitIds.includes(e.id)) continue;
       if (dist(pr.pos, e.pos) <= pr.radius + e.radius) {
         pr.hitIds.push(e.id);
+        // A ring where it landed, sized to the body it hit. The spark burst says
+        // 'something happened here'; the ring says how big the thing was.
+        emitRing(world, pr.pos, e.radius * 1.7, pr.crit ? critColor : CONFIG.fx.ringColor);
         if (pr.burn > 0) applyBurn(e.status, pr.burn);
         if (pr.frost > 0) applyFrost(e.status, pr.frost);
         damageEnemy(world, e, pr.damage, {
@@ -370,6 +386,7 @@ export function updateProjectiles(world: World, dt: number) {
     if (pr.alive && boss && boss.alive && !pr.hitIds.includes(-1)) {
       if (dist(pr.pos, boss.pos) <= pr.radius + boss.radius) {
         pr.hitIds.push(-1);
+        emitRing(world, pr.pos, boss.radius * 0.9, pr.crit ? critColor : CONFIG.fx.ringColor);
         if (pr.burn > 0) applyBurn(boss.status, pr.burn);
         if (pr.frost > 0) applyFrost(boss.status, pr.frost);
         damageBoss(world, boss, pr.damage, {

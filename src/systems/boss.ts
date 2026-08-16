@@ -30,6 +30,9 @@ export function makeBoss(w: number, h: number, roomIndex: number, variant = 0): 
     atkTimer: 0,
     atkShotsLeft: 0,
     chargeDir: vec(0, 0),
+    facing: vec(0, 1), // enters from the top of the arena looking down at you
+    gait: 0,
+    recoil: 0,
     hitFlash: 0,
     alive: true,
     status: makeStatus(),
@@ -70,6 +73,9 @@ export function updateBoss(world: World, dt: number) {
   const phase = phases[b.phase];
 
   b.stateTimer -= dt;
+  if (b.recoil > 0) b.recoil -= dt;
+  const fromX = b.pos.x;
+  const fromY = b.pos.y;
 
   switch (b.state) {
     case 'intro':
@@ -97,6 +103,23 @@ export function updateBoss(world: World, dt: number) {
 
   // Keep on screen and out of cover.
   confine(b.pos, b.radius, world);
+
+  // Walk cadence, by ground covered — see CONFIG.fx.gaitPerPx. A charging boss
+  // covers a lot of it fast, which is exactly when it should look like it is
+  // moving under its own power rather than being slid across the floor.
+  b.gait += Math.hypot(b.pos.x - fromX, b.pos.y - fromY) * CONFIG.fx.gaitPerPx;
+
+  // Point the sprite. Mid-dash it holds the direction it committed to — a boss
+  // that swivels to track you during a charge would undersell the one attack
+  // whose whole answer is "step out of the lane".
+  const look = b.currentAttack === 'charge' && b.state === 'attacking'
+    ? b.chargeDir
+    : sub(p.pos, b.pos);
+  const l = Math.hypot(look.x, look.y);
+  if (l > 1e-6) {
+    b.facing.x = look.x / l;
+    b.facing.y = look.y / l;
+  }
 
   // Contact damage.
   if (dist(b.pos, p.pos) <= b.radius + p.radius) {

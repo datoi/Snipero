@@ -1,3 +1,4 @@
+import { CONFIG } from '../config';
 import { World } from '../engine/types';
 import { normalize } from '../engine/vec';
 import { confine, moveCircle } from './obstacles';
@@ -22,6 +23,8 @@ export function updatePlayerMovement(world: World, dt: number) {
   if (!input.moving) return; // standing still — no movement (enables stop-to-shoot)
 
   player.facing = normalize(input.axis);
+  const fromX = player.pos.x;
+  const fromY = player.pos.y;
 
   // Slide along cover instead of catching on it — pushing diagonally into a wall
   // should still carry you along its face.
@@ -34,4 +37,10 @@ export function updatePlayerMovement(world: World, dt: number) {
   );
 
   confine(player.pos, player.radius, world); // keep on screen and out of cover
+
+  // Walk cadence, advanced by ground actually covered — see CONFIG.fx.gaitPerPx.
+  // Measured AFTER confine so walking into a wall stops the animation instead of
+  // marching on the spot, which is the tell that gives a fake walk cycle away.
+  player.gait +=
+    Math.hypot(player.pos.x - fromX, player.pos.y - fromY) * CONFIG.fx.gaitPerPx;
 }

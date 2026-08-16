@@ -1,5 +1,8 @@
 import { CONFIG } from '../config';
 import { Player, ShotPattern } from '../engine/types';
+// Type-only, so the loadout table can name a pose and an icon without dragging
+// the renderer's `require` table into the simulation's module graph.
+import type { Pose, WeaponIcon } from '../render/sprites';
 
 // Equipment: the between-runs progression that gives a finished run a point.
 //
@@ -11,6 +14,13 @@ import { Player, ShotPattern } from '../engine/types';
 // changes the moment-to-moment feel of every single shot, which is the
 // difference between "my character got stronger" and "I'm playing differently
 // this run". Everything else here exists to give the weapon a home.
+//
+// ── A note on the ids ──────────────────────────────────────────────────────
+// They read fantasy — `bow`, `staff`, `scythe` — because that is what these
+// weapons were before the game had art, and a GearId is what a save file stores.
+// Renaming them would hand every existing player a wiped loadout in exchange for
+// tidier source, which is a bad trade. The titles and the sprites are what the
+// player sees, and those say what the hero is actually holding.
 
 export type GearSlot = 'weapon' | 'armor' | 'ring';
 export type GearRarity = 'common' | 'rare' | 'epic' | 'legendary';
@@ -50,6 +60,17 @@ export interface GearDef {
   /** Owned from the start — every slot needs one so a run is never unarmed. */
   starter?: boolean;
   stats: GearStats;
+
+  /**
+   * Weapons only: how the hero holds it, and the loose sprite for the menu.
+   *
+   * The pose is doing real work, not decoration. A weapon that changes your
+   * range and your rate but leaves the hero looking identical makes the loadout
+   * screen the only place the choice is visible; a different silhouette in your
+   * hands means you can tell what you equipped while you are playing.
+   */
+  pose?: Pose;
+  icon?: WeaponIcon;
 }
 
 // Rarity is a power band AND a price band. It is deliberately not a
@@ -79,16 +100,22 @@ export const GEAR_RARITY_COLOR: Record<GearRarity, string> = {
 
 export const GEAR: GearDef[] = [
   // ── Weapons ──
+  //
+  // Each one gets a different pose, so the four of them are four distinct
+  // silhouettes on the field: hands forward, long barrel, bulky two-handed,
+  // one-handed sidearm.
   {
     id: 'bow', slot: 'weapon', rarity: 'common', starter: true,
-    title: 'Hunting Bow', desc: 'Balanced. One arrow, no surprises.',
+    title: 'Service Pistol', desc: 'Balanced. One round, no surprises.',
     color: '#9ad14f',
+    pose: 'gun', icon: 'pistol',
     stats: { pattern: 'single', damageMult: 1.15 },
   },
   {
     id: 'staff', slot: 'weapon', rarity: 'rare',
-    title: 'Oak Staff', desc: 'Slow, heavy bolts that pass through a body.',
+    title: 'Marksman Rifle', desc: 'Slow, heavy rounds that pass through a body.',
     color: '#7c6cf0',
+    pose: 'silencer', icon: 'silenced',
     stats: {
       pattern: 'single',
       damageMult: 1.9, attackRateMult: 0.62, rangeMult: 1.1, pierceAdd: 1,
@@ -96,12 +123,13 @@ export const GEAR: GearDef[] = [
   },
   {
     id: 'scythe', slot: 'weapon', rarity: 'epic',
-    title: 'Reaper', desc: 'A short, wide sweep. Lethal up close, blind at range.',
+    title: 'Scattergun', desc: 'A short, wide spray. Lethal up close, blind at range.',
     color: '#e0457b',
+    pose: 'hold', icon: 'rifle',
     stats: {
       pattern: 'arc',
-      // Three projectiles per swing at half the reach, swung slowly. The volume
-      // is the payoff; the range and the rate are the price. Damage per arrow
+      // Three projectiles per shot at half the reach, fired slowly. The volume
+      // is the payoff; the range and the rate are the price. Damage per pellet
       // stays ordinary so it doesn't also win the trade it's meant to lose.
       damageMult: 1.15, projectilesAdd: 2, spreadDeg: 30,
       rangeMult: 0.5, attackRateMult: 0.42,
@@ -109,13 +137,14 @@ export const GEAR: GearDef[] = [
   },
   {
     id: 'crossbow', slot: 'weapon', rarity: 'legendary',
-    title: 'Repeater', desc: 'Three bolts in a burst, then a long reload.',
+    title: 'Repeater', desc: 'Three rounds in a burst, then a long reload.',
     color: '#f0a93c',
+    pose: 'machine', icon: 'rifle',
     stats: {
       pattern: 'burst',
-      // Burst DPS is (shots x damage x rate). Tuned a little above the bow, and
-      // paid for in exposure: the whole burst needs you standing still, so the
-      // reload is where a bomber gets to reach you.
+      // Burst DPS is (shots x damage x rate). Tuned a little above the pistol,
+      // and paid for in exposure: the whole burst needs you standing still, so
+      // the reload is where a bomber gets to reach you.
       damageMult: 1.25, attackRateMult: 0.34,
     },
   },
@@ -123,19 +152,19 @@ export const GEAR: GearDef[] = [
   // ── Armour ──
   {
     id: 'tunic', slot: 'armor', rarity: 'common', starter: true,
-    title: 'Leather Tunic', desc: '+30 max HP.',
+    title: 'Field Vest', desc: '+30 max HP.',
     color: '#b98a55',
     stats: { maxHpAdd: 30 },
   },
   {
     id: 'plate', slot: 'armor', rarity: 'epic',
-    title: 'Iron Plate', desc: '+70 max HP, ignore 12% of damage. Heavy.',
+    title: 'Riot Plate', desc: '+70 max HP, ignore 12% of damage. Heavy.',
     color: '#9fb3c8',
     stats: { maxHpAdd: 70, resistAdd: 0.12, speedMult: 0.94 },
   },
   {
     id: 'cloak', slot: 'armor', rarity: 'rare',
-    title: 'Windrunner Cloak', desc: '+20 max HP and noticeably quicker.',
+    title: 'Scout Rig', desc: '+20 max HP and noticeably quicker.',
     color: '#4fd1c5',
     stats: { maxHpAdd: 20, speedMult: 1.12 },
   },
@@ -143,19 +172,19 @@ export const GEAR: GearDef[] = [
   // ── Rings ──
   {
     id: 'ringPower', slot: 'ring', rarity: 'common', starter: true,
-    title: 'Band of Power', desc: '+12% damage.',
+    title: 'Power Cell', desc: '+12% damage.',
     color: '#ef4444',
     stats: { damageMult: 1.12 },
   },
   {
     id: 'ringFocus', slot: 'ring', rarity: 'epic',
-    title: 'Focus Signet', desc: '+18% crit chance and a longer reach.',
+    title: 'Targeting Chip', desc: '+18% crit chance and a longer reach.',
     color: '#ffe066',
     stats: { critChanceAdd: 0.18, rangeMult: 1.15 },
   },
   {
     id: 'ringHaste', slot: 'ring', rarity: 'rare',
-    title: 'Quickdraw Ring', desc: '+15% fire rate.',
+    title: 'Quickdraw Rig', desc: '+15% fire rate.',
     color: '#f59e0b',
     stats: { attackRateMult: 1.15 },
   },
@@ -273,6 +302,11 @@ function applyItem(p: Player, def: GearDef, level: number) {
   if (s.projectilesAdd) p.projectilesPerShot += s.projectilesAdd;
   if (s.spreadDeg !== undefined) p.spreadDeg = s.spreadDeg;
   if (s.pattern) p.pattern = s.pattern;
+
+  // How the hero holds it. Carried on the player rather than looked up by the
+  // renderer, because the run has no idea what a loadout is by the time it
+  // starts — only what the loadout did to it.
+  if (def.pose) p.pose = def.pose;
 }
 
 // Apply a whole loadout. Called once at run start, before talents.

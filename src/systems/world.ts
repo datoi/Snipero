@@ -1,9 +1,10 @@
 import { CONFIG } from '../config';
 import { Enemy, EnemyKind, RoomType, World } from '../engine/types';
-import { Vec2, vec } from '../engine/vec';
+import { Vec2, normalize, sub, vec } from '../engine/vec';
 import { makeBoss, playBossIntro } from './boss';
 import { makeShrines } from './shrine';
 import { buildObstacles, resolveCircle } from './obstacles';
+import { buildDecor } from './decor';
 import { makeFx } from './fx';
 import { makeStatus } from './status';
 import { composeWave, enemyScale } from './difficulty';
@@ -18,6 +19,8 @@ export function createWorld(w: number, h: number, chapter = 0, endless = false):
       radius: pc.radius,
       speed: pc.speed,
       color: pc.color,
+      set: pc.set,
+      pose: pc.pose,
       hp: pc.maxHp,
       maxHp: pc.maxHp,
       damage: pc.damage,
@@ -52,6 +55,8 @@ export function createWorld(w: number, h: number, chapter = 0, endless = false):
       burstTimer: 0,
       cooldown: 0,
       stillTime: 0,
+      gait: 0,
+      recoil: 0,
       level: 1,
       xp: 0,
       xpToNext: CONFIG.progression.baseXpToNext,
@@ -66,6 +71,7 @@ export function createWorld(w: number, h: number, chapter = 0, endless = false):
       open: false,
     },
     obstacles: [],
+    decor: [],
     pickups: [],
     blasts: [],
     gearFound: [],
@@ -126,6 +132,7 @@ export function resizeWorld(world: World, w: number, h: number) {
   for (const p of world.enemyProjectiles) scale(p.pos);
   for (const p of world.pickups) scale(p.pos);
   for (const p of world.fx.particles) scale(p.pos);
+  for (const q of world.fx.pops) scale(q.pos);
   for (const n of world.fx.numbers) scale(n.pos);
   if (world.boss) scale(world.boss.pos);
   for (const s of world.shrines) scale(s.pos);
@@ -139,6 +146,12 @@ export function resizeWorld(world: World, w: number, h: number) {
   // than scaled — a stretched layout would violate its own minimum lane widths.
   world.obstacles = buildObstacles(
     w, h, combatRoomsBefore(world.roomIndex), world.roomType !== 'combat'
+  );
+  // Scenery sits on that cover, so it is rebuilt from the new blocks rather than
+  // scaled with everything else. Its seed is the room, not the frame, so the
+  // room still looks like itself on the other side of the rotation.
+  world.decor = buildDecor(
+    w, h, world.obstacles, world.chapter, world.roomIndex, world.roomType
   );
 
   // Rebuilt cover can land on top of a body, so put everything legal again.
@@ -169,6 +182,12 @@ export function spawnEnemy(world: World, kind: EnemyKind, x: number, y: number):
     goldReward: Math.round(c.goldReward * s.reward),
     alive: true,
     hitFlash: 0,
+    gait: 0,
+    recoil: 0,
+    // Points at the player from the first frame; updateEnemies keeps it honest.
+    // Spawning everything facing east would have a whole wave turn in unison on
+    // the first tick, which is the one moment the player is reading the room.
+    facing: normalize(sub(world.player.pos, vec(x, y))),
     attackTimer: kind === 'shooter' ? Math.random() * 1.0 : 0,
     projectileDamage:
       kind === 'shooter' ? CONFIG.enemies.shooter.projectileDamage * s.damage : 0,
@@ -276,6 +295,7 @@ export function loadRoom(world: World, index: number) {
 
   // Cover comes first — spawn positions below are pushed out of whatever it covers.
   world.obstacles = buildObstacles(w, h, combatIndex, type !== 'combat');
+  world.decor = buildDecor(w, h, world.obstacles, world.chapter, index, type);
 
   // Move the player down from the door so a fresh wave doesn't spawn on top.
   world.player.pos.x = w / 2;
