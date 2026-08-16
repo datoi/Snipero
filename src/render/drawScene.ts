@@ -118,7 +118,7 @@ export function drawScene(canvas: SkCanvas, world: World, width: number, height:
     const y = o.pos.y - o.h / 2;
 
     fill(oc.shadowColor, 0.5);
-    roundRect(canvas, x + 4, y + 7, o.w, o.h, 6);
+    roundRect(canvas, x + 2, y + 4, o.w, o.h, 6);
 
     fill(oc.color);
     roundRect(canvas, x, y, o.w, o.h, 6);

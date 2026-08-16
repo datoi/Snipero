@@ -95,8 +95,8 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
             <View
               style={{
                 position: 'absolute',
-                left: left + 4,
-                top: top + 7,
+                left: left + 2,
+                top: top + 4,
                 width: o.w,
                 height: o.h,
                 borderRadius: 6,
@@ -134,10 +134,14 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
             >
               {THEME.obstacle && (
                 <>
+                  {/* Explicit size for the same reason the floor needs it —
+                      `repeat` tiles only across dimensions it knows, and with
+                      absolute insets alone it filled part of the block and left
+                      the rest bare, which read as a huge dark side face. */}
                   <Image
                     source={THEME.obstacle}
                     resizeMode="repeat"
-                    style={StyleSheet.absoluteFill}
+                    style={{ position: 'absolute', left: 0, top: 0, width: o.w, height: o.h }}
                   />
                   <View
                     style={[

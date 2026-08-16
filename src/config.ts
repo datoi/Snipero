@@ -543,11 +543,15 @@ export const CONFIG = {
     // rather than a different colour is what makes a block read as one object
     // — the first pass had a brown top on a blue-grey base and every piece of
     // cover looked like two unrelated things stacked.
-    color: '#252a35',        // side face — in shadow, the part seen edge-on
-    topColor: '#3b4354',     // top face — lit, the part the camera looks down at
-    edgeColor: '#4d5768',    // highlight along the very top lip
+    color: '#2b3140',        // side face — in shadow, the part seen edge-on
+    topColor: '#464f63',     // top face — lit, the part the camera looks down at
+    edgeColor: '#5d6880',    // highlight along the very top lip
     shadowColor: '#05070a',
-    blockHeight: 9,          // px the top face is lifted; 0 = flat, as before
+
+    // Small. A tall lift turns the side face into a slab of its own and the
+    // block stops reading as one object — the point is a hint of thickness, not
+    // a wall drawn in perspective.
+    blockHeight: 7,
 
     // Soft contact shadow under every body, as a fraction of its radius. Bodies
     // without one look pasted onto the floor rather than standing on it.

@@ -62,10 +62,21 @@ export interface ArenaTheme {
 // second colour scheme.
 export const THEME: ArenaTheme = {
   floor: require('../../assets/art/floor-stone.png'),
-  obstacle: require('../../assets/art/floor-stone.png'),
+
+  // Cover is deliberately UNTEXTURED.
+  //
+  // It is a gameplay element, not scenery: you read it to decide where a shot
+  // can go and where you can hide, and you read it while three things are
+  // moving. A solid block lit from one direction resolves in a glance; a
+  // patterned one has to be parsed. The textured floor behind it does the job
+  // of making the arena feel like a place, and a plain object on a detailed
+  // ground reads better than detail on detail.
+  //
+  // Set this to a tile to try the other way — the plumbing stays in place.
+  // obstacle: require('../../assets/art/floor-stone.png'),
 
   floorDim: 0.86,     // near-black: the floor is background, not decoration
-  obstacleDim: 0.62,  // lighter than the floor, so cover reads as raised
+  obstacleDim: 0.62,
 
   floorColor: '#15171c',
   floorPanelColor: '#191d25',
