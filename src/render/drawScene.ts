@@ -104,16 +104,39 @@ export function drawScene(canvas: SkCanvas, world: World, width: number, height:
   canvas.translate(fx.shakeX, fx.shakeY);
 
   // ── Cover — drawn first so every actor sits on top of it ──
+  //
+  // Three layers make a flat rectangle read as a block with height: a shadow it
+  // casts on the floor, a dark side face at the footprint, and a lit top face
+  // lifted by blockHeight. Only the bottom strip of the side face survives, and
+  // that strip is what the eye reads as the front of the block.
+  //
+  // Cosmetic only — collision still uses the flat footprint, which is what keeps
+  // every pathing and line-of-sight number valid.
+  const oc = CONFIG.obstacles;
   for (const o of obstacles) {
     const x = o.pos.x - o.w / 2;
     const y = o.pos.y - o.h / 2;
-    // Lit top edge: the highlight is the full body, with the face drawn over
-    // it 3px lower. Cheaper than clipping and reads the same.
-    fill(CONFIG.obstacles.edgeColor);
+
+    fill(oc.shadowColor, 0.5);
+    roundRect(canvas, x + 4, y + 7, o.w, o.h, 6);
+
+    fill(oc.color);
     roundRect(canvas, x, y, o.w, o.h, 6);
-    fill(CONFIG.obstacles.color);
-    roundRect(canvas, x, y + 3, o.w, o.h - 3, 6);
+
+    fill(oc.topColor);
+    roundRect(canvas, x, y - oc.blockHeight, o.w, o.h, 6);
+    fill(oc.edgeColor);
+    roundRect(canvas, x, y - oc.blockHeight, o.w, 2, 2);
   }
+
+  // Contact shadow under a body. Squashed vertically because the camera looks
+  // down at an angle, and offset the same way every other shadow is — one light
+  // direction for the whole scene, or it stops reading as a single space.
+  const bodyShadow = (cx: number, cy: number, radius: number, drop: number) => {
+    const rx = radius * oc.bodyShadow;
+    fill(oc.shadowColor, 0.45);
+    canvas.drawOval({ x: cx - rx, y: cy - rx * 0.5 + drop, width: rx * 2, height: rx }, fillPaint);
+  };
 
   // ── Door — grey when locked, glowing green when open ──
   const dx = door.pos.x - door.width / 2;
@@ -210,6 +233,7 @@ export function drawScene(canvas: SkCanvas, world: World, width: number, height:
   // ── Boss ──
   if (world.boss && world.boss.alive) {
     const b = world.boss;
+    bodyShadow(b.pos.x, b.pos.y, b.radius, 8);
     if (b.state === 'windup') {
       stroke('#ffffff', 4);
       canvas.drawCircle(b.pos.x, b.pos.y, b.radius + 10, strokePaint);
@@ -240,6 +264,7 @@ export function drawScene(canvas: SkCanvas, world: World, width: number, height:
 
   // ── Enemies ──
   for (const e of enemies) {
+    bodyShadow(e.pos.x, e.pos.y, e.radius, 5);
     if ((e.kind === 'charger' || e.kind === 'bomber') && e.state === 'windup') {
       stroke('#ffffff', 3);
       canvas.drawCircle(e.pos.x, e.pos.y, e.radius + 6, strokePaint);
@@ -298,6 +323,8 @@ export function drawScene(canvas: SkCanvas, world: World, width: number, height:
     stroke('#60a5fa', 2 + 3 * (player.shield / player.shieldMax), 0.85);
     canvas.drawCircle(player.pos.x, player.pos.y, player.radius + 6, strokePaint);
   }
+  bodyShadow(player.pos.x, player.pos.y, player.radius, 6);
+
   // Body takes the hero's colour; the white rim is constant. Heroes can be
   // orange or blue — the same range as the enemies — so hue alone can't carry
   // "that's me". The rim is what does, and no enemy has one.

@@ -531,8 +531,23 @@ export const CONFIG = {
   // Cover. Blocks movement and shots for both sides, so standing still to fire
   // now means finding an angle rather than just finding a gap in the bullets.
   obstacles: {
-    color: '#333947',
-    edgeColor: '#454c5e',
+    // Cover is drawn as a block with height, not a flat rectangle: a dark side
+    // face at the footprint, and a lit top face shifted up by `blockHeight`, so
+    // the strip left showing at the bottom reads as the front of the block.
+    //
+    // Purely cosmetic — collision still uses the flat footprint, which is what
+    // keeps every pathing and line-of-sight number valid. The visual leans on
+    // the same trick Archero does: a fixed overhead camera where objects still
+    // show a little of their front face.
+    color: '#333947',        // side face — the part you look at edge-on
+    topColor: '#4a5266',     // top face — lit, the part the camera looks down at
+    edgeColor: '#5b6479',    // highlight along the very top lip
+    shadowColor: '#080a0e',
+    blockHeight: 12,         // px the top face is lifted; 0 = flat, as before
+
+    // Soft contact shadow under every body, as a fraction of its radius. Bodies
+    // without one look pasted onto the floor rather than standing on it.
+    bodyShadow: 0.9,
     doorClearance: 30,   // px of walkable margin kept around the exit door
     // Narrowest lane a layout may leave against the arena edge. Anything tighter
     // than a body can fit down gets snapped flush to the wall instead.

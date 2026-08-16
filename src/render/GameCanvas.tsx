@@ -64,22 +64,28 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
           itself, and a lit top edge. Flat rectangles read as holes in the floor;
           these read as things standing on it. */}
       {obstacles.map((o, i) => {
+        const oc = CONFIG.obstacles;
         const left = o.pos.x - o.w / 2;
         const top = o.pos.y - o.h / 2;
         return (
           <React.Fragment key={`obs${i}`}>
+            {/* Cast shadow on the floor, offset down-right from a light that is
+                always up-left. One light direction for everything, or the scene
+                stops reading as a single space. */}
             <View
               style={{
                 position: 'absolute',
-                left: left + 3,
-                top: top + 5,
+                left: left + 4,
+                top: top + 7,
                 width: o.w,
                 height: o.h,
                 borderRadius: 6,
-                backgroundColor: '#0b0d11',
-                opacity: 0.55,
+                backgroundColor: oc.shadowColor,
+                opacity: 0.5,
               }}
             />
+            {/* Side face: the full footprint. Only its bottom `blockHeight` px
+                end up visible once the top face is drawn over it. */}
             <View
               style={{
                 position: 'absolute',
@@ -88,10 +94,22 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
                 width: o.w,
                 height: o.h,
                 borderRadius: 6,
+                backgroundColor: oc.color,
+              }}
+            />
+            {/* Top face, lifted. This is the surface the camera looks down at. */}
+            <View
+              style={{
+                position: 'absolute',
+                left,
+                top: top - oc.blockHeight,
+                width: o.w,
+                height: o.h,
+                borderRadius: 6,
                 overflow: 'hidden',
-                backgroundColor: CONFIG.obstacles.color,
-                borderTopWidth: 3,
-                borderTopColor: CONFIG.obstacles.edgeColor,
+                backgroundColor: oc.topColor,
+                borderTopWidth: 2,
+                borderTopColor: oc.edgeColor,
               }}
             >
               {THEME.obstacle && (
@@ -261,6 +279,20 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
           Math.floor(e.stateTimer * 12) % 2 === 0;
         return (
         <React.Fragment key={e.id}>
+          {/* Contact shadow. Squashed vertically because the camera looks down
+              at an angle, and offset the same way every other shadow is. */}
+          <View
+            style={{
+              position: 'absolute',
+              left: e.pos.x - e.radius * CONFIG.obstacles.bodyShadow,
+              top: e.pos.y - e.radius * CONFIG.obstacles.bodyShadow * 0.5 + 5,
+              width: e.radius * 2 * CONFIG.obstacles.bodyShadow,
+              height: e.radius * CONFIG.obstacles.bodyShadow,
+              borderRadius: e.radius,
+              backgroundColor: CONFIG.obstacles.shadowColor,
+              opacity: 0.45,
+            }}
+          />
           {/* charger / bomber telegraph: white ring while winding up */}
           {(e.kind === 'charger' || e.kind === 'bomber') && e.state === 'windup' && (
             <View
@@ -351,7 +383,19 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
         />
       ))}
 
-      {/* player */}
+      {/* player — contact shadow first, same light direction as everything else */}
+      <View
+        style={{
+          position: 'absolute',
+          left: player.pos.x - player.radius * CONFIG.obstacles.bodyShadow,
+          top: player.pos.y - player.radius * CONFIG.obstacles.bodyShadow * 0.5 + 6,
+          width: player.radius * 2 * CONFIG.obstacles.bodyShadow,
+          height: player.radius * CONFIG.obstacles.bodyShadow,
+          borderRadius: player.radius,
+          backgroundColor: CONFIG.obstacles.shadowColor,
+          opacity: 0.5,
+        }}
+      />
       <View
         style={{
           position: 'absolute',
