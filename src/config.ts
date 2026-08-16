@@ -539,11 +539,15 @@ export const CONFIG = {
     // keeps every pathing and line-of-sight number valid. The visual leans on
     // the same trick Archero does: a fixed overhead camera where objects still
     // show a little of their front face.
-    color: '#333947',        // side face — the part you look at edge-on
-    topColor: '#4a5266',     // top face — lit, the part the camera looks down at
-    edgeColor: '#5b6479',    // highlight along the very top lip
-    shadowColor: '#080a0e',
-    blockHeight: 12,         // px the top face is lifted; 0 = flat, as before
+    // One hue, three values. The side face being a *darker shade of the top*
+    // rather than a different colour is what makes a block read as one object
+    // — the first pass had a brown top on a blue-grey base and every piece of
+    // cover looked like two unrelated things stacked.
+    color: '#252a35',        // side face — in shadow, the part seen edge-on
+    topColor: '#3b4354',     // top face — lit, the part the camera looks down at
+    edgeColor: '#4d5768',    // highlight along the very top lip
+    shadowColor: '#05070a',
+    blockHeight: 9,          // px the top face is lifted; 0 = flat, as before
 
     // Soft contact shadow under every body, as a fraction of its radius. Bodies
     // without one look pasted onto the floor rather than standing on it.

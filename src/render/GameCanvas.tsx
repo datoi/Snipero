@@ -52,10 +52,20 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
       >
         {THEME.floor && (
           <>
+            {/* Explicit size, not absoluteFill. On iOS `resizeMode="repeat"`
+                only tiles across dimensions it actually knows: given absolute
+                insets alone it drew a single tile in the corner and left the
+                rest of the arena black. */}
             <Image
               source={THEME.floor}
               resizeMode="repeat"
-              style={StyleSheet.absoluteFill}
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                width: world.bounds.w,
+                height: world.bounds.h,
+              }}
             />
             {/* Knock the tileset back so the floor stays quieter than anything
                 moving on it. See ArenaTheme.floorDim. */}

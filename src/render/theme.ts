@@ -48,14 +48,24 @@ export interface ArenaTheme {
 // Kenney "Top-down Shooter" (CC0). Only the tiles actually used are committed,
 // under assets/art/; the raw 600-file pack is gitignored and re-downloadable
 // from https://kenney.nl/assets.
-//   floor-stone.png = tile_272, a stone panel that tiles into a flagstone floor
-//   crate.png       = tile_129, a crate lid that tiles into stacked cover
+//
+// ONE material for floor and cover, separated by brightness rather than by hue.
+//
+// The first attempt used the pack's wooden crate for cover, and it looked like
+// a sticker: bright cartoon brown on a near-black floor, with a blue-grey side
+// face that made every block read as two unrelated objects stacked. The lesson
+// is that an asset pack authored bright cannot be dropped into a dark scene one
+// sprite at a time — the palette has to agree first.
+//
+// Using the same stone for both and letting cover sit brighter than the floor
+// gives depth the way a single light source would, and nothing has to match a
+// second colour scheme.
 export const THEME: ArenaTheme = {
   floor: require('../../assets/art/floor-stone.png'),
-  obstacle: require('../../assets/art/crate.png'),
+  obstacle: require('../../assets/art/floor-stone.png'),
 
-  floorDim: 0.72,
-  obstacleDim: 0.4,
+  floorDim: 0.86,     // near-black: the floor is background, not decoration
+  obstacleDim: 0.62,  // lighter than the floor, so cover reads as raised
 
   floorColor: '#15171c',
   floorPanelColor: '#191d25',
