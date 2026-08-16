@@ -21,6 +21,7 @@ import {
   angleOf, bossKey, charKey, charSize, decorKey, floorKey, foeKey, wallKey, TILE_SIZE,
 } from './sprites';
 import { EDGE_FALLOFF, floorFor, themeFor } from './theme';
+import { backdropFor, backdropLayout, backdropScroll } from './backdrop';
 import { bodyAnim } from './anim';
 
 // Outline color for a body carrying a debuff — burn reads over slow, since it's
@@ -186,6 +187,7 @@ export function drawScene(
   width: number,
   height: number,
   atlas: SkImage | null = null,
+  backdrop: SkImage | null = null,
 ) {
   const {
     player, enemies, projectiles, enemyProjectiles, door, obstacles, decor, pickups, fx,
@@ -212,8 +214,32 @@ export function drawScene(
   fill(theme.floorColor);
   rect(canvas, 0, 0, width, height);
 
+  // The painted backdrop takes the ground when it has decoded, and the tiled
+  // floor below is what the arena falls back to until then — which is the same
+  // contract the flat colour above already has, one layer further up. Drawing
+  // both would be the tile grid rendered purely to be covered.
+  const bd = backdropFor(world.chapter);
+  const painted = bd !== null && backdrop !== null;
+
+  if (bd !== null && backdrop !== null) {
+    const src = { x: 0, y: 0, width: backdrop.width(), height: backdrop.height() };
+    spritePaint.setAlphaf(1);
+    for (const r of backdropLayout(bd, width, height, backdropScroll(world.time))) {
+      canvas.drawImageRect(
+        backdrop,
+        src,
+        { x: r.x, y: r.y, width: r.w, height: r.h },
+        spritePaint,
+      );
+    }
+    // Same readability rule the tiles get, its own value because this art
+    // carries more contrast. See CONFIG.background.dim.
+    fill('#000000', CONFIG.background.dim);
+    rect(canvas, 0, 0, width, height);
+  }
+
   const floor = FRAMES[floorKey(floorFor(theme, world.roomType))];
-  if (atlas && floor) {
+  if (!painted && atlas && floor) {
     spritePaint.setAlphaf(1);
     for (let y = 0; y < height; y += TILE_SIZE) {
       for (let x = 0; x < width; x += TILE_SIZE) {

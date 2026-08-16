@@ -8,6 +8,7 @@ import {
   FLOOR, WALL, angleOf, charSize, charSprite, decorSprite, foeSprite, bossSprite,
 } from './sprites';
 import { EDGE_FALLOFF, FLOOR_BACKSTOP, floorFor, themeFor } from './theme';
+import { backdropFor, backdropLayout, backdropScroll, backdropSource } from './backdrop';
 import { BodyAnim, bodyAnim } from './anim';
 
 // Outline color for a body carrying a debuff — burn reads over slow, since it's
@@ -118,6 +119,14 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
   const theme = themeFor(world.chapter);
   const floor = FLOOR[floorFor(theme, world.roomType)];
 
+  // The painted ground, and where its copies sit this frame. Derived from
+  // world.time rather than a timer of this component's own, so the ground
+  // freezes with the rest of the game behind a pause overlay.
+  const backdropId = backdropFor(world.chapter);
+  const backdropRects = backdropId
+    ? backdropLayout(backdropId, world.bounds.w, world.bounds.h, backdropScroll(world.time))
+    : [];
+
   // Which hands the hero is drawing with. The equipped weapon sets the pose at
   // run start; the reload is the one moment it changes mid-fight, and showing it
   // is what turns the Repeater's long gap from "why did I stop shooting" into a
@@ -137,29 +146,56 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
         { transform: [{ translateX: fx.shakeX }, { translateY: fx.shakeY }] },
       ]}
     >
-      {/* Floor — the chapter's ground, tiled across the whole arena. */}
+      {/* Floor — the chapter's ground, and the lowest layer the arena draws.
+          Deliberately NOT `overflow: hidden`. The backdrop is drawn larger than
+          the arena so a screen shake cannot pull an edge into view, and this
+          wrapper is inside the shake transform: clipping here would move the
+          crop along with the camera and throw away exactly the overscan that
+          margin exists to provide. Nothing needs the clip — the arena is the
+          size of the screen, so the overflow lands off-surface, and the HUD is
+          a later sibling that paints over this regardless. */}
       <View style={[StyleSheet.absoluteFill, { backgroundColor: FLOOR_BACKSTOP }]}>
-        {/* Explicit size, not absoluteFill. On iOS `resizeMode="repeat"` only
-            tiles across dimensions it actually knows: given absolute insets
-            alone it drew a single tile in the corner and left the rest of the
-            arena black. */}
-        <Image
-          source={floor}
-          resizeMode="repeat"
-          style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            width: world.bounds.w,
-            height: world.bounds.h,
-          }}
-        />
-        {/* Knock the tileset back so the floor stays quieter than anything
-            moving on it. See ArenaTheme.floorDim. */}
+        {backdropId ? (
+          // Painted ground. One rect when static, several when scrolling —
+          // see backdropLayout, which both renderers share so they cannot
+          // disagree about where the ground is.
+          backdropRects.map((r, i) => (
+            <Image
+              key={i}
+              source={backdropSource(backdropId)}
+              // Every rect is already computed at the image's own aspect, so
+              // stretching to it is exact. `cover` would re-fit inside the
+              // rect and quietly undo the layout.
+              resizeMode="stretch"
+              style={{ position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h }}
+            />
+          ))
+        ) : (
+          // Explicit size, not absoluteFill. On iOS `resizeMode="repeat"` only
+          // tiles across dimensions it actually knows: given absolute insets
+          // alone it drew a single tile in the corner and left the rest of the
+          // arena black.
+          <Image
+            source={floor}
+            resizeMode="repeat"
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: world.bounds.w,
+              height: world.bounds.h,
+            }}
+          />
+        )}
+        {/* Knock the ground back so it stays quieter than anything moving on
+            it. See ArenaTheme.floorDim and CONFIG.background.dim. */}
         <View
           style={[
             StyleSheet.absoluteFill,
-            { backgroundColor: '#000000', opacity: theme.floorDim },
+            {
+              backgroundColor: '#000000',
+              opacity: backdropId ? CONFIG.background.dim : theme.floorDim,
+            },
           ]}
         />
       </View>

@@ -5,6 +5,7 @@ import { Canvas, Picture, createPicture, useImage } from '@shopify/react-native-
 import { World } from '../engine/types';
 import { useFrameTick } from '../hooks/useGameLoop';
 import { drawScene } from './drawScene';
+import { backdropSource } from './backdrop';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ACTIVE renderer. Requires a development build — Skia is a native module and is
@@ -48,8 +49,17 @@ export function GameCanvas({
   // stays unaware that a renderer exists at all.
   const atlas = useImage(require('../../assets/art/atlas.png'));
 
+  // The painted ground. Loaded here rather than inside drawScene for exactly the
+  // reason the atlas is: decoding needs a hook, hooks need a component, and
+  // drawScene has to stay a pure function of world state.
+  //
+  // Unconditional, and not selected by chapter — a hook cannot be called behind
+  // an `if`. When there is more than one backdrop this becomes one useImage per
+  // id, choosing between the decoded images rather than between the requires.
+  const backdrop = useImage(backdropSource('foundry'));
+
   const picture = createPicture(
-    (canvas) => drawScene(canvas, world, width, height, atlas),
+    (canvas) => drawScene(canvas, world, width, height, atlas, backdrop),
     { x: 0, y: 0, width, height } // explicit bounds let Skia cull off-screen ops
   );
 

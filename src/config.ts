@@ -175,6 +175,51 @@ export const CONFIG = {
       legendary: [0, 16],
     } as Record<'common' | 'rare' | 'epic' | 'legendary', [number, number]>,
   },
+  // ── The painted ground ─────────────────────────────────────────────────────
+  //
+  // The arena's backdrop art, and how (or whether) it moves. See
+  // src/render/backdrop.ts, which owns the image and the layout maths.
+  //
+  // scrollSpeed is 0 — the ground is STATIC — and that is a deliberate default
+  // rather than an unfinished one, for two reasons:
+  //
+  //   The game is not a scroller. The arena is a fixed room the size of the
+  //   screen, the camera never translates, and the exit is a door you walk UP
+  //   to. Ground sliding downward asserts that the hero is travelling, while
+  //   the hero is in fact standing still in a room — and cover, which is static
+  //   in world space and casts a shadow onto that ground, would visibly float.
+  //
+  //   The art does not tile. Scrolling repeats the image vertically every
+  //   ~630px, and this one was not authored to meet its own top edge, so the
+  //   join would march down the screen as a hard line.
+  //
+  // Both are fixable and neither is fatal: raise scrollSpeed to something small
+  // (5-15 px/sec reads as atmosphere rather than travel) and the whole looping
+  // path in backdrop.ts is already live. Above roughly 15 the shadows under
+  // cover start to read as wrong.
+  background: {
+    /** px/sec the ground travels downward. 0 = static. */
+    scrollSpeed: 0,
+
+    /**
+     * Multiplier on that speed, kept separate so the base speed can stay the
+     * "real" rate while this dials the ground's apparent distance. Negative
+     * scrolls upward; 0 pins it regardless of scrollSpeed.
+     */
+    parallax: 1,
+
+    /**
+     * How much black to lay over the backdrop, 0..1.
+     *
+     * Its own value rather than the theme's `floorDim` because this art carries
+     * far more contrast than a 64px deck plate does, and the rule it has to
+     * satisfy is the same one: the ground must stay quieter than the things
+     * moving on it. A floor that competes with a projectile for attention is a
+     * floor that gets someone killed.
+     */
+    dim: 0.45,
+  },
+
   projectile: {
     radius: 5,
     speed: 560,              // px/sec
