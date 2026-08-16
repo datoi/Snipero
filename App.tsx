@@ -39,6 +39,7 @@ import { HeroDef } from './src/systems/heroes';
 import { Vec2 } from './src/engine/vec';
 import { World } from './src/engine/types';
 import { CONFIG } from './src/config';
+import { THEME } from './src/render/theme';
 import { setMuted, startAudio, stopAudio } from './src/audio/AudioEngine';
 
 type Screen = 'home' | 'game';
@@ -390,7 +391,8 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#15171c' },
+  // Frame colour behind the arena panel — see src/render/theme.ts.
+  root: { flex: 1, backgroundColor: THEME.wallColor },
 
   // Live run readouts (health, depth, boss bar, room prompt) live in src/ui/Hud.
   muteBtn: {

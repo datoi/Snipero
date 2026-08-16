@@ -1,10 +1,11 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import { Status, World } from '../engine/types';
 import { useFrameTick } from '../hooks/useGameLoop';
 import { bossPhases } from '../systems/boss';
 import { shrineColor } from '../systems/shrine';
 import { CONFIG } from '../config';
+import { THEME } from './theme';
 
 // Outline color for a body carrying a debuff — burn reads over slow, since it's
 // the one actively killing. Returns null when the body is clean.
@@ -40,23 +41,70 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
         { transform: [{ translateX: fx.shakeX }, { translateY: fx.shakeY }] },
       ]}
     >
-      {/* Cover — drawn first so every actor sits on top of it */}
-      {obstacles.map((o, i) => (
-        <View
-          key={`obs${i}`}
-          style={{
-            position: 'absolute',
-            left: o.pos.x - o.w / 2,
-            top: o.pos.y - o.h / 2,
-            width: o.w,
-            height: o.h,
-            borderRadius: 6,
-            backgroundColor: CONFIG.obstacles.color,
-            borderTopWidth: 3,
-            borderTopColor: CONFIG.obstacles.edgeColor,
-          }}
-        />
-      ))}
+      {/* Floor. A tiled texture when the theme has one, otherwise a panel a
+          shade lighter than the frame — enough for the arena to read as a room
+          you are standing in rather than an unbounded void. */}
+      <View
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: THEME.floorPanelColor },
+        ]}
+      >
+        {THEME.floor && (
+          <Image
+            source={THEME.floor}
+            resizeMode="repeat"
+            style={StyleSheet.absoluteFill}
+          />
+        )}
+      </View>
+
+      {/* Cover — drawn first so every actor sits on top of it.
+          Three layers give it height: a shadow it casts on the floor, the face
+          itself, and a lit top edge. Flat rectangles read as holes in the floor;
+          these read as things standing on it. */}
+      {obstacles.map((o, i) => {
+        const left = o.pos.x - o.w / 2;
+        const top = o.pos.y - o.h / 2;
+        return (
+          <React.Fragment key={`obs${i}`}>
+            <View
+              style={{
+                position: 'absolute',
+                left: left + 3,
+                top: top + 5,
+                width: o.w,
+                height: o.h,
+                borderRadius: 6,
+                backgroundColor: '#0b0d11',
+                opacity: 0.55,
+              }}
+            />
+            <View
+              style={{
+                position: 'absolute',
+                left,
+                top,
+                width: o.w,
+                height: o.h,
+                borderRadius: 6,
+                overflow: 'hidden',
+                backgroundColor: CONFIG.obstacles.color,
+                borderTopWidth: 3,
+                borderTopColor: CONFIG.obstacles.edgeColor,
+              }}
+            >
+              {THEME.obstacle && (
+                <Image
+                  source={THEME.obstacle}
+                  resizeMode="repeat"
+                  style={StyleSheet.absoluteFill}
+                />
+              )}
+            </View>
+          </React.Fragment>
+        );
+      })}
 
       {/* Door at the top — grey when locked, glowing green when open.
           Frame posts give it a silhouette no HUD element has; a plain filled
