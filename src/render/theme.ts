@@ -83,6 +83,17 @@ export interface ArenaTheme {
 
   /** Flat litter for the bare floor. Only things you could walk over. */
   decals: DecalId[];
+
+  /**
+   * The light in the exit gate once a room is cleared. See render/gate.ts.
+   *
+   * Warm rather than the green the old door marker used, and per-chapter rather
+   * than one constant: green is the language of the UI — it is what the banner
+   * and the menu buttons speak — and the point of the gate is that it belongs
+   * to the room instead. A light the colour of the wing you are fighting
+   * through reads as something lit, not as something clicked.
+   */
+  gateGlow: string;
 }
 
 // App chrome, and the frame behind the arena. Deliberately NOT per-chapter: it
@@ -118,6 +129,7 @@ export const THEMES: ArenaTheme[] = [
       'drum-orange', 'box-blue', 'rock-a',
     ],
     decals: ['oil', 'spill', 'scrap-a', 'scrap-b', 'rubble'],
+    gateGlow: '#ffb45c', // Foundry: hot metal
   },
 
   // Chapter 2 — The Warrens. Older, warmer, timber and brass.
@@ -137,6 +149,7 @@ export const THEMES: ArenaTheme[] = [
       'barrel', 'crate-small', 'plant',
     ],
     decals: ['plank', 'planks', 'rubble', 'scrap-a', 'leaves'],
+    gateGlow: '#ffd08a', // Warrens: lamplight through timber
   },
 
   // Chapter 3 — Cold Storage. Steel bays, and nothing warm anywhere in it.
@@ -152,6 +165,7 @@ export const THEMES: ArenaTheme[] = [
       'crate-small', 'rock-c',
     ],
     decals: ['shards-a', 'shards-b', 'oil', 'scrap-a', 'scrap-b'],
+    gateGlow: '#9fe4ff', // Cold Storage: nothing warm anywhere in it
   },
 ];
 

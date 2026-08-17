@@ -22,6 +22,7 @@ import {
 } from './sprites';
 import { EDGE_FALLOFF, floorFor, themeFor } from './theme';
 import { backdropFor, backdropLayout, backdropScroll } from './backdrop';
+import { gateLayout, glowAlpha } from './gate';
 import { bodyAnim } from './anim';
 
 // Outline color for a body carrying a debuff — burn reads over slow, since it's
@@ -190,7 +191,7 @@ export function drawScene(
   backdrop: SkImage | null = null,
 ) {
   const {
-    player, enemies, projectiles, enemyProjectiles,  obstacles, decor, pickups, fx,
+    player, enemies, projectiles, enemyProjectiles, obstacles, decor, pickups, fx,
   } = world;
   const pr = CONFIG.pickups.radius;
   const theme = themeFor(world.chapter);
@@ -255,6 +256,30 @@ export function drawScene(
     // it — the same dim the Views renderer applies, for the same reason.
     fill('#000000', theme.floorDim);
     rect(canvas, 0, 0, width, height);
+  }
+
+  // ── The exit gate ──
+  //
+  // Drawn with the ground rather than with the actors: it is architecture, so
+  // anything alive should pass in front of it. Built from the room's own cover
+  // colours — see render/gate.ts for why it exists at all.
+  {
+    const g = gateLayout(world.door);
+    fill(theme.cover.side);
+    for (const r of g.posts) rect(canvas, r.x, r.y, r.w, r.h);
+    fill(theme.cover.edge, 0.55);
+    for (const r of g.caps) rect(canvas, r.x, r.y, r.w, r.h);
+
+    // The threshold takes the glow colour the moment the room opens, so the
+    // line you step over is itself the signal — no separate indicator to read.
+    fill(world.door.open ? theme.gateGlow : theme.cover.side, world.door.open ? 0.85 : 1);
+    rect(canvas, g.sill.x, g.sill.y, g.sill.w, g.sill.h);
+
+    for (let i = 0; i < g.glow.length; i++) {
+      const r = g.glow[i];
+      fill(theme.gateGlow, glowAlpha(i));
+      rect(canvas, r.x, r.y, r.w, r.h);
+    }
   }
 
   // Light falling off at the walls the camera cannot show — see EDGE_FALLOFF.
@@ -347,14 +372,6 @@ export function drawScene(
     fill(oc.shadowColor, 0.45);
     canvas.drawOval({ x: cx - rx, y: cy - rx * 0.5 + drop, width: rx * 2, height: rx }, fillPaint);
   };
-
-  // ── The exit is deliberately not drawn ──
-  //
-  // The backdrop paints a doorway across the top of the arena, so that art is
-  // the door. What used to be here was a grey bar that turned green, and over a
-  // painted arch it was simply a second door drawn on top of the real one. The
-  // zone that actually moves the player on lives in CONFIG.door; the only cue
-  // is the room-cleared banner, which already says which way to walk.
 
   // ── Loot — under the actors so bodies always read on top ──
   for (const p of pickups) {

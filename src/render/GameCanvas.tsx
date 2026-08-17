@@ -9,6 +9,7 @@ import {
 } from './sprites';
 import { EDGE_FALLOFF, FLOOR_BACKSTOP, floorFor, themeFor } from './theme';
 import { backdropFor, backdropLayout, backdropScroll, backdropSource } from './backdrop';
+import { gateLayout, glowAlpha } from './gate';
 import { BodyAnim, bodyAnim } from './anim';
 
 // Outline color for a body carrying a debuff — burn reads over slow, since it's
@@ -111,12 +112,13 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
   useFrameTick(60);
 
   const {
-    player, enemies, projectiles, enemyProjectiles,  obstacles, decor, pickups, fx,
+    player, enemies, projectiles, enemyProjectiles, obstacles, decor, pickups, fx,
   } = world;
   const pr = CONFIG.pickups.radius;
   const oc = CONFIG.obstacles;
 
   const theme = themeFor(world.chapter);
+  const gate = gateLayout(world.door);
   const floor = FLOOR[floorFor(theme, world.roomType)];
 
   // The painted ground, and where its copies sit this frame. Derived from
@@ -199,6 +201,47 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
           ]}
         />
       </View>
+
+      {/* The exit gate. Drawn with the ground rather than with the actors — it
+          is architecture, so anything alive passes in front of it. Built from
+          the room's own cover colours; see render/gate.ts. */}
+      {gate.posts.map((r, i) => (
+        <View
+          key={`gpost${i}`}
+          style={{
+            position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h,
+            backgroundColor: theme.cover.side,
+          }}
+        />
+      ))}
+      {gate.caps.map((r, i) => (
+        <View
+          key={`gcap${i}`}
+          style={{
+            position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h,
+            backgroundColor: theme.cover.edge, opacity: 0.55,
+          }}
+        />
+      ))}
+      {/* The threshold takes the glow the moment the room opens, so the line
+          you step over is itself the signal. */}
+      <View
+        style={{
+          position: 'absolute',
+          left: gate.sill.x, top: gate.sill.y, width: gate.sill.w, height: gate.sill.h,
+          backgroundColor: world.door.open ? theme.gateGlow : theme.cover.side,
+          opacity: world.door.open ? 0.85 : 1,
+        }}
+      />
+      {gate.glow.map((r, i) => (
+        <View
+          key={`gglow${i}`}
+          style={{
+            position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h,
+            backgroundColor: theme.gateGlow, opacity: glowAlpha(i),
+          }}
+        />
+      ))}
 
       {/* Light falling off at the walls the camera cannot show. Four stacked
           bands per edge rather than a gradient, because a gradient needs a
@@ -343,11 +386,6 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
           />
         );
       })}
-
-      {/* The exit is deliberately not drawn — the backdrop paints a doorway
-          across the top of the arena, and that art is the door. The grey/green
-          bar that used to sit here was a second door over the real one. See
-          CONFIG.door for the zone that actually moves the player on. */}
 
       {/* Loot on the floor — under the actors so bodies always read on top.
           Each one floats on its own phase offset so a pile doesn't pulse as

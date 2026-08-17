@@ -608,6 +608,24 @@ export const CONFIG = {
      * activating reads as the game ignoring you.
      */
     reachFrac: 0.13,
+
+    // How the exit is DRAWN — see src/render/gate.ts.
+    //
+    // The trigger stays invisible; what the player sees is a gate built around
+    // it out of the room's own wall material. Sizes are in px rather than
+    // fractions because these are the proportions of a built object: a pillar
+    // is a pillar whatever size the screen is, and scaling one with the
+    // viewport would make it a thin strip on a phone and a monolith on a
+    // tablet.
+    gate: {
+      postW: 16,      // pillar width
+      capW: 5,        // lit lip down the pillar's inner face
+      sillH: 7,       // threshold band across the floor of the opening
+      glowBands: 5,   // stacked steps of light, once the room is cleared
+      glowStep: 13,   // how much taller each band is than the last
+      glowTaper: 0.3, // how far the bands narrow as they climb, as a fraction
+      glowAlpha: 0.3, // brightest band's opacity; the rest fade off it
+    },
   },
 
   joystick: {
