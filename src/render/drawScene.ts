@@ -22,7 +22,6 @@ import {
 } from './sprites';
 import { EDGE_FALLOFF, floorFor, themeFor } from './theme';
 import { backdropFor, backdropRectsFor } from './backdrop';
-import { gateLayout, glowAlpha } from './gate';
 import { bodyAnim } from './anim';
 
 // Outline color for a body carrying a debuff — burn reads over slow, since it's
@@ -215,23 +214,27 @@ function drawBackdrop(
         spritePaint,
       );
     }
-    // The readability rule the tiles get, with its own value because this art
-    // carries more contrast. See CONFIG.background.dim.
-    fill('#000000', CONFIG.background.dim);
-    rect(canvas, 0, 0, width, height);
+    // Both dims default to 0 now — the art is shown as painted. Skipped rather
+    // than drawn at zero alpha, so turning them off costs nothing per frame.
+    if (CONFIG.background.dim > 0) {
+      fill('#000000', CONFIG.background.dim);
+      rect(canvas, 0, 0, width, height);
+    }
   }
 
   // Push the margin back. Four rects around the arena rather than one big one
   // with a hole, because Skia has no hole and a clip would cost a save/restore
   // for something four fills already say.
-  const { x, y } = world.origin;
-  const bw = world.bounds.w;
-  const bh = world.bounds.h;
-  fill('#000000', CONFIG.field.marginDim);
-  rect(canvas, 0, 0, width, y);
-  rect(canvas, 0, y + bh, width, height - (y + bh));
-  rect(canvas, 0, y, x, bh);
-  rect(canvas, x + bw, y, width - (x + bw), bh);
+  if (CONFIG.field.marginDim > 0) {
+    const { x, y } = world.origin;
+    const bw = world.bounds.w;
+    const bh = world.bounds.h;
+    fill('#000000', CONFIG.field.marginDim);
+    rect(canvas, 0, 0, width, y);
+    rect(canvas, 0, y + bh, width, height - (y + bh));
+    rect(canvas, 0, y, x, bh);
+    rect(canvas, x + bw, y, width - (x + bw), bh);
+  }
 }
 
 export function drawScene(
@@ -306,29 +309,12 @@ export function drawScene(
     }
   }
 
-  // ── The exit gate ──
+  // ── The exit is not drawn ──
   //
-  // Drawn with the ground rather than with the actors: it is architecture, so
-  // anything alive should pass in front of it. Built from the room's own cover
-  // colours — see render/gate.ts for why it exists at all.
-  {
-    const g = gateLayout(world.door);
-    fill(theme.cover.side);
-    for (const r of g.posts) rect(canvas, r.x, r.y, r.w, r.h);
-    fill(theme.cover.edge, 0.55);
-    for (const r of g.caps) rect(canvas, r.x, r.y, r.w, r.h);
-
-    // The threshold takes the glow colour the moment the room opens, so the
-    // line you step over is itself the signal — no separate indicator to read.
-    fill(world.door.open ? theme.gateGlow : theme.cover.side, world.door.open ? 0.85 : 1);
-    rect(canvas, g.sill.x, g.sill.y, g.sill.w, g.sill.h);
-
-    for (let i = 0; i < g.glow.length; i++) {
-      const r = g.glow[i];
-      fill(theme.gateGlow, glowAlpha(i));
-      rect(canvas, r.x, r.y, r.w, r.h);
-    }
-  }
+  // No marker of any kind: the backdrop paints its own archway at the top and
+  // the room-cleared banner says which way to walk, so anything the game added
+  // on top was a second door over the real one. The zone that actually moves
+  // the player on is invisible and lives in CONFIG.door.
 
   // Light falling off at the walls the camera cannot show — see EDGE_FALLOFF.
   // Against the ARENA's edges, which is where the room now actually ends.

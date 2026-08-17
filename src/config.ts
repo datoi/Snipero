@@ -222,12 +222,20 @@ export const CONFIG = {
     /**
      * Extra black over the margin, 0..1, on top of the backdrop's own dim.
      *
-     * The frame has to read as "not here" at a glance and while three things
-     * are moving. Darkening does that without a border: the arena becomes the
-     * lit part of the picture, which is how a real space would look and is the
-     * same trick EDGE_FALLOFF already plays at the arena's own edges.
+     * ZERO — the frame is not darkened at all, and the letterbox is invisible.
+     *
+     * It was 0.42, on the theory that the arena should read as the lit part of
+     * the picture. On a device that theory was wrong in a specific way: the
+     * darkening did not read as light falling off, it read as a RECTANGLE, and
+     * a hard-edged rectangle sitting on painted ground looks like a rendering
+     * artefact rather than a place. The art already frames itself with walls
+     * and foliage, so it needed no help.
+     *
+     * Left as a knob rather than deleted: the draw is skipped entirely at 0, so
+     * this costs nothing, and a future backdrop with a busier margin may want a
+     * little of it back.
      */
-    marginDim: 0.42,
+    marginDim: 0,
   },
 
   // ── The painted ground ─────────────────────────────────────────────────────
@@ -266,13 +274,19 @@ export const CONFIG = {
     /**
      * How much black to lay over the backdrop, 0..1.
      *
-     * Its own value rather than the theme's `floorDim` because this art carries
-     * far more contrast than a 64px deck plate does, and the rule it has to
-     * satisfy is the same one: the ground must stay quieter than the things
-     * moving on it. A floor that competes with a projectile for attention is a
-     * floor that gets someone killed.
+     * ZERO — the art is shown as painted.
+     *
+     * This was 0.45, to hold the ground quieter than the things moving on it.
+     * That rule is real and still worth watching: a floor that competes with a
+     * projectile for attention is a floor that gets someone killed. But this
+     * backdrop is already muted and low-contrast by construction — it was
+     * generated to be — and dimming it that hard turned a painted courtyard
+     * into a murky one for no readability that was actually missing.
+     *
+     * If sprites start getting lost against it, this is the first dial to turn,
+     * and 0.15-0.2 is enough to separate them without dulling the art.
      */
-    dim: 0.45,
+    dim: 0,
   },
 
   projectile: {
@@ -672,21 +686,6 @@ export const CONFIG = {
     // is a pillar whatever size the screen is, and scaling one with the
     // viewport would make it a thin strip on a phone and a monolith on a
     // tablet.
-    // The bands OVERLAP — each is drawn from the sill upward — so their alphas
-    // compound. At 0.3 across five bands the doorway filled in to roughly 0.64
-    // opaque and the gate read on a device as a solid tan panel: a UI widget
-    // lying on the grass, which is the exact thing it exists to not be. 0.13
-    // over four bands lands near 0.35, and a shallower glowStep keeps the light
-    // to the bottom half of the opening rather than flooding all of it.
-    gate: {
-      postW: 16,       // pillar width
-      capW: 5,         // lit lip down the pillar's inner face
-      sillH: 7,        // threshold band across the floor of the opening
-      glowBands: 4,    // stacked steps of light, once the room is cleared
-      glowStep: 9,     // how much taller each band is than the last
-      glowTaper: 0.45, // how far the bands narrow as they climb, as a fraction
-      glowAlpha: 0.13, // brightest band's opacity; the rest fade off it
-    },
   },
 
   joystick: {

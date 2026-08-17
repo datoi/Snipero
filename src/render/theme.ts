@@ -84,16 +84,6 @@ export interface ArenaTheme {
   /** Flat litter for the bare floor. Only things you could walk over. */
   decals: DecalId[];
 
-  /**
-   * The light in the exit gate once a room is cleared. See render/gate.ts.
-   *
-   * Warm rather than the green the old door marker used, and per-chapter rather
-   * than one constant: green is the language of the UI — it is what the banner
-   * and the menu buttons speak — and the point of the gate is that it belongs
-   * to the room instead. A light the colour of the wing you are fighting
-   * through reads as something lit, not as something clicked.
-   */
-  gateGlow: string;
 }
 
 // App chrome, and the frame behind the arena. Deliberately NOT per-chapter: it
@@ -107,13 +97,19 @@ export const FLOOR_BACKSTOP = '#15171c';
 /**
  * How far the light falls off at the walls, and how dark it gets there.
  *
- * The arena has edges the camera cannot show — a room this size has walls, and
- * they are off screen. Darkening the last few dozen pixels is what makes the
- * play area read as enclosed rather than as a rectangle cropped out of an
- * infinite floor. Purely cosmetic: nothing is confined by it, and the player can
- * still stand anywhere inside it.
+ * OFF — `alpha: 0`, which makes the renderers skip it entirely.
+ *
+ * It existed because the arena used to be a rectangle cropped out of an
+ * infinite tiled floor, and darkening the last few dozen pixels was what made
+ * it read as an enclosed room. Neither half of that is true any more: the arena
+ * is a letterboxed field inside a painted courtyard, and the backdrop draws its
+ * own walls. All the falloff added was a second hard-edged rectangle inside the
+ * first, which is what it looked like on a device.
+ *
+ * Kept as a knob rather than deleted — the loops break immediately at 0, so it
+ * costs nothing, and a tiled-floor chapter would want it back.
  */
-export const EDGE_FALLOFF = { bands: 5, step: 7, start: 6, alpha: 0.16, fade: 0.03 };
+export const EDGE_FALLOFF = { bands: 5, step: 7, start: 6, alpha: 0, fade: 0.03 };
 
 export const THEMES: ArenaTheme[] = [
   // Chapter 1 — The Foundry. Rust and hot metal.
@@ -129,7 +125,6 @@ export const THEMES: ArenaTheme[] = [
       'drum-orange', 'box-blue', 'rock-a',
     ],
     decals: ['oil', 'spill', 'scrap-a', 'scrap-b', 'rubble'],
-    gateGlow: '#ffb45c', // Foundry: hot metal
   },
 
   // Chapter 2 — The Warrens. Older, warmer, timber and brass.
@@ -149,7 +144,6 @@ export const THEMES: ArenaTheme[] = [
       'barrel', 'crate-small', 'plant',
     ],
     decals: ['plank', 'planks', 'rubble', 'scrap-a', 'leaves'],
-    gateGlow: '#ffd08a', // Warrens: lamplight through timber
   },
 
   // Chapter 3 — Cold Storage. Steel bays, and nothing warm anywhere in it.
@@ -165,7 +159,6 @@ export const THEMES: ArenaTheme[] = [
       'crate-small', 'rock-c',
     ],
     decals: ['shards-a', 'shards-b', 'oil', 'scrap-a', 'scrap-b'],
-    gateGlow: '#9fe4ff', // Cold Storage: nothing warm anywhere in it
   },
 ];
 

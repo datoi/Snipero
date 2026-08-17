@@ -9,7 +9,6 @@ import {
 } from './sprites';
 import { EDGE_FALLOFF, FLOOR_BACKSTOP, floorFor, themeFor } from './theme';
 import { backdropFor, backdropRectsFor, backdropSource } from './backdrop';
-import { gateLayout, glowAlpha } from './gate';
 import { BodyAnim, bodyAnim } from './anim';
 
 // Outline color for a body carrying a debuff — burn reads over slow, since it's
@@ -118,7 +117,6 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
   const oc = CONFIG.obstacles;
 
   const theme = themeFor(world.chapter);
-  const gate = gateLayout(world.door);
   const floor = FLOOR[floorFor(theme, world.roomType)];
 
   // The painted ground, and where its copies sit this frame. Derived from
@@ -167,7 +165,10 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
             />
           ))
         ) : null}
-        {backdropId && (
+        {/* Both dims default to 0 now — the art is shown as painted. Not
+            rendered at all rather than rendered transparent, so turning them
+            off costs no nodes. */}
+        {backdropId && CONFIG.background.dim > 0 && (
           <View
             style={[
               StyleSheet.absoluteFill,
@@ -177,10 +178,10 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
         )}
       </View>
 
-      {/* The letterbox margin, pushed back so the arena reads as the lit part
-          of the picture. Four bands rather than a border, so nothing is drawn
-          over the playfield itself. See CONFIG.field.marginDim. */}
-      {(() => {
+      {/* The letterbox margin. Off by default: darkening it did not read as
+          light falling off, it read as a hard-edged rectangle sitting on
+          painted ground. See CONFIG.field.marginDim. */}
+      {CONFIG.field.marginDim > 0 && (() => {
         const { x, y } = world.origin;
         const { w: bw, h: bh } = world.bounds;
         const { w: sw, h: sh } = world.screen;
@@ -243,46 +244,10 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
         </>
       )}
 
-      {/* The exit gate. Drawn with the ground rather than with the actors — it
-          is architecture, so anything alive passes in front of it. Built from
-          the room's own cover colours; see render/gate.ts. */}
-      {gate.posts.map((r, i) => (
-        <View
-          key={`gpost${i}`}
-          style={{
-            position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h,
-            backgroundColor: theme.cover.side,
-          }}
-        />
-      ))}
-      {gate.caps.map((r, i) => (
-        <View
-          key={`gcap${i}`}
-          style={{
-            position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h,
-            backgroundColor: theme.cover.edge, opacity: 0.55,
-          }}
-        />
-      ))}
-      {/* The threshold takes the glow the moment the room opens, so the line
-          you step over is itself the signal. */}
-      <View
-        style={{
-          position: 'absolute',
-          left: gate.sill.x, top: gate.sill.y, width: gate.sill.w, height: gate.sill.h,
-          backgroundColor: world.door.open ? theme.gateGlow : theme.cover.side,
-          opacity: world.door.open ? 0.85 : 1,
-        }}
-      />
-      {gate.glow.map((r, i) => (
-        <View
-          key={`gglow${i}`}
-          style={{
-            position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h,
-            backgroundColor: theme.gateGlow, opacity: glowAlpha(i),
-          }}
-        />
-      ))}
+      {/* The exit is not drawn — the backdrop paints its own archway at the top
+          and the room-cleared banner says which way to walk, so anything the
+          game added here was a second door over the real one. The zone that
+          moves the player on is invisible; see CONFIG.door. */}
 
       {/* Light falling off at the walls the camera cannot show. Four stacked
           bands per edge rather than a gradient, because a gradient needs a
