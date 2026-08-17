@@ -10,12 +10,10 @@ import { CONFIG } from '../config';
 //
 // ── Why the layout has two modes ───────────────────────────────────────────
 //
-// The art is 1024x1024 — square — while a phone arena is nearer 393x852, an
-// aspect of 2.17. It is less than half as wide, proportionally, as the picture
-// it has to show. Scaled to the arena's WIDTH the image is only 393px tall
-// against 852px of arena, so fitting the width alone cannot cover the room.
-// Something has to give, and which thing gives depends entirely on whether the
-// ground is moving:
+// The art is 832x1248, an aspect of 1.5, while a phone screen wants nearer 2.06
+// once the overscan below is accounted for. Scaled to the screen's WIDTH the
+// image is too short to cover it. Something has to give, and which thing gives
+// depends entirely on whether the ground is moving:
 //
 //   STATIC (scrollSpeed 0) — COVER. Scale until the image covers the arena,
 //   keep its aspect, centre it, and let the overflow crop. One draw, and no
@@ -34,18 +32,18 @@ import { CONFIG } from '../config';
 // with structures and foliage — which is the practical reason the game ships
 // with scrollSpeed at 0 rather than merely a design preference.
 //
-// ── What cover costs on a square image ─────────────────────────────────────
+// ── What the aspect mismatch costs ─────────────────────────────────────────
 //
-// Covering a 2.17:1 arena with a 1:1 picture crops 56% of its WIDTH. This art
-// is composed as a framed circle — buildings at the corners, rocks and flowers
-// around the rim, open grass in the middle — so what survives the crop is the
-// middle 44%, which is very largely the plain grass. The framing is the part
-// that gets thrown away.
+// At 1.5 against a screen wanting 2.06, cover throws away 34% of the image's
+// WIDTH on a typical phone. What it throws away is specifically the left and
+// right stone walls, which are the strongest part of this art's framing — the
+// visible slice runs from roughly x 141 to x 691 of 832, and both walls sit
+// outside it.
 //
 // The code is doing the only sound thing available to it: preserve the aspect,
-// fill the arena, seams nowhere. The mismatch is in the source, and the fix is
-// art authored at roughly 1:2 rather than 1:1 — at 1024x2048 essentially
-// nothing would be cropped on a phone.
+// cover the screen, seams nowhere. The mismatch is in the source. Art authored
+// at 1:2 — 1024x2048 — would lose about 3% instead of 34%, and the walls would
+// survive.
 
 export type BackdropId = 'arena';
 
@@ -58,7 +56,7 @@ export type BackdropId = 'arena';
 // and rejects the union, while <Image source> accepts it happily. Widening it
 // here would mean one of the two renderers could not use this table.
 const BACKDROP: Record<BackdropId, number> = {
-  arena: require('../../assets/lucid-origin_Top-down_mobile_roguelike_action_game_arena_designed_specifically_as_a_playable_-0.jpg'),
+  arena: require('../../assets/lucid-origin_Top-down_orthographic_view_of_a_fantasy_battle_arena_floor_mobile_game_backgroun-0.jpg'),
 };
 
 // Intrinsic pixel size of each image above.
@@ -70,7 +68,7 @@ const BACKDROP: Record<BackdropId, number> = {
 // every run. Keep in step with the file; a wrong number here shows up as art
 // that is subtly stretched rather than as an error.
 const SIZE: Record<BackdropId, { w: number; h: number }> = {
-  arena: { w: 1024, h: 1024 },
+  arena: { w: 832, h: 1248 },
 };
 
 /**
