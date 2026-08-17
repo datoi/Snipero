@@ -39,7 +39,7 @@ export type BackdropId = 'arena';
  * stretched and an arena that does not line up with the painted floor.
  */
 export const BACKDROP_SIZE: Record<BackdropId, { w: number; h: number }> = {
-  arena: { w: 832, h: 1248 },
+  arena: { w: 768, h: 1344 },
 };
 
 export interface Rect {

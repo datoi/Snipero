@@ -66,7 +66,7 @@ export type { BackdropId, BackdropRect };
 // and rejects the union, while <Image source> accepts it happily. Widening it
 // here would mean one of the two renderers could not use this table.
 const BACKDROP: Record<BackdropId, number> = {
-  arena: require('../../assets/lucid-origin_Top-down_orthographic_view_of_a_fantasy_battle_arena_floor_mobile_game_backgroun-0.jpg'),
+  arena: require('../../assets/gemini-2.5-flash-image_Prompt_Outpaint_seamlessly_in_all_four_directions_top_bottom_left_and_right_arou-0.jpg'),
 };
 
 /**

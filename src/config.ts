@@ -195,18 +195,24 @@ export const CONFIG = {
   // that can be balanced once.
   field: {
     /**
-     * The painted floor inside the backdrop image, as fractions of that image.
+     * The playable floor inside the backdrop image, as fractions of that image.
      *
-     * This IS the arena. It replaced a chosen aspect ratio, and the difference
-     * is that the boundary the player runs into is now the boundary they can
-     * see: the stone walls in the art are where the arena ends, because these
-     * numbers trace them. Read off the source image — walls occupy roughly the
-     * outer 11% each side, the arch the top 11%, the foliage the bottom 8%.
+     * This IS the arena, and it is the only thing stopping the player walking
+     * out to the very edge of the picture. Deliberately invisible: no border,
+     * no darkening, nothing drawn at all — the barrier is felt, not seen.
+     *
+     * Traced to the INSIDE OF THE BOULDER RING in the current art, not to the
+     * edge of the open grass. The ring is low scenery a body reads as standing
+     * beside rather than inside, so stopping there keeps the hero off the dense
+     * foliage at the picture's edge — which is the thing that would look wrong —
+     * without shrinking the arena to the clearing alone. The clearing by itself
+     * measures 0.65 x 0.575 of the image, which on a phone is a 255px-wide
+     * arena: about ten hero-widths across, and too tight to fight in.
      *
      * Retrace these whenever the backdrop changes, or the invisible wall drifts
      * away from the painted one. See render/backdropFit.ts.
      */
-    floor: { left: 0.11, right: 0.89, top: 0.11, bottom: 0.92 },
+    floor: { left: 0.14, right: 0.86, top: 0.15, bottom: 0.79 },
 
     /**
      * Screen reserved for the HUD stack above the arena, in px.
