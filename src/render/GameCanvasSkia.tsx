@@ -56,7 +56,7 @@ export function GameCanvas({
   // Unconditional, and not selected by chapter — a hook cannot be called behind
   // an `if`. When there is more than one backdrop this becomes one useImage per
   // id, choosing between the decoded images rather than between the requires.
-  const backdrop = useImage(backdropSource('foundry'));
+  const backdrop = useImage(backdropSource('arena'));
 
   const picture = createPicture(
     (canvas) => drawScene(canvas, world, width, height, atlas, backdrop),

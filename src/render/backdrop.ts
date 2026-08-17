@@ -10,11 +10,12 @@ import { CONFIG } from '../config';
 //
 // ── Why the layout has two modes ───────────────────────────────────────────
 //
-// The art is 832x1248, an aspect of 1.5. A phone arena is nearer 420x900, an
-// aspect of 2.14 — considerably taller and narrower. Scaled to the arena's
-// WIDTH the image is only 630px tall against 900px of arena, so fitting the
-// width alone cannot cover the room. Something has to give, and which thing
-// gives depends entirely on whether the ground is moving:
+// The art is 1024x1024 — square — while a phone arena is nearer 393x852, an
+// aspect of 2.17. It is less than half as wide, proportionally, as the picture
+// it has to show. Scaled to the arena's WIDTH the image is only 393px tall
+// against 852px of arena, so fitting the width alone cannot cover the room.
+// Something has to give, and which thing gives depends entirely on whether the
+// ground is moving:
 //
 //   STATIC (scrollSpeed 0) — COVER. Scale until the image covers the arena,
 //   keep its aspect, centre it, and let the overflow crop. One draw, and no
@@ -27,12 +28,26 @@ import { CONFIG } from '../config';
 //   image has no repeat length, so there is nothing to loop.
 //
 // The second mode is the one that needs a VERTICALLY TILEABLE image: its top
-// edge meets its own bottom edge every 630px, and a photo-style backdrop that
-// was not authored to wrap will show that join as a hard line marching down
-// the arena. This one was not, which is the practical reason the game ships
+// edge meets its own bottom edge every screen-width, and a painted backdrop
+// that was not authored to wrap will show that join as a hard line marching
+// down the arena. This one was not — its top and bottom edges are both dressed
+// with structures and foliage — which is the practical reason the game ships
 // with scrollSpeed at 0 rather than merely a design preference.
+//
+// ── What cover costs on a square image ─────────────────────────────────────
+//
+// Covering a 2.17:1 arena with a 1:1 picture crops 56% of its WIDTH. This art
+// is composed as a framed circle — buildings at the corners, rocks and flowers
+// around the rim, open grass in the middle — so what survives the crop is the
+// middle 44%, which is very largely the plain grass. The framing is the part
+// that gets thrown away.
+//
+// The code is doing the only sound thing available to it: preserve the aspect,
+// fill the arena, seams nowhere. The mismatch is in the source, and the fix is
+// art authored at roughly 1:2 rather than 1:1 — at 1024x2048 essentially
+// nothing would be cropped on a phone.
 
-export type BackdropId = 'foundry';
+export type BackdropId = 'arena';
 
 // Metro resolves `require` at bundle time, so the path must be a literal —
 // same constraint that shapes sprites.ts, and the same answer: one table.
@@ -43,7 +58,7 @@ export type BackdropId = 'foundry';
 // and rejects the union, while <Image source> accepts it happily. Widening it
 // here would mean one of the two renderers could not use this table.
 const BACKDROP: Record<BackdropId, number> = {
-  foundry: require('../../assets/lucid-origin_Genre_Perspective_Orthographic_top-down_view_flat_no_distortion_high-definition_-0.jpg'),
+  arena: require('../../assets/lucid-origin_Top-down_mobile_roguelike_action_game_arena_designed_specifically_as_a_playable_-0.jpg'),
 };
 
 // Intrinsic pixel size of each image above.
@@ -55,7 +70,7 @@ const BACKDROP: Record<BackdropId, number> = {
 // every run. Keep in step with the file; a wrong number here shows up as art
 // that is subtly stretched rather than as an error.
 const SIZE: Record<BackdropId, { w: number; h: number }> = {
-  foundry: { w: 832, h: 1248 },
+  arena: { w: 1024, h: 1024 },
 };
 
 /**
@@ -67,7 +82,7 @@ const SIZE: Record<BackdropId, { w: number; h: number }> = {
  * pick between the decoded results rather than between the requires.
  */
 export function backdropFor(_chapter: number): BackdropId | null {
-  return 'foundry';
+  return 'arena';
 }
 
 export function backdropSource(id: BackdropId): number {
