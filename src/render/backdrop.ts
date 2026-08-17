@@ -46,7 +46,16 @@ import type { World } from '../engine/types';
 // at 1:2 — 1024x2048 — would lose about 3% instead of 34%, and the walls would
 // survive.
 
-export type BackdropId = 'arena';
+// Geometry and the size table live in backdropFit, which holds no requires so
+// the simulation can share them. This file adds the images themselves.
+import {
+  BACKDROP_SIZE as SIZE,
+  containRect,
+  type BackdropId,
+  type Rect as BackdropRect,
+} from './backdropFit';
+
+export type { BackdropId, BackdropRect };
 
 // Metro resolves `require` at bundle time, so the path must be a literal —
 // same constraint that shapes sprites.ts, and the same answer: one table.
@@ -58,18 +67,6 @@ export type BackdropId = 'arena';
 // here would mean one of the two renderers could not use this table.
 const BACKDROP: Record<BackdropId, number> = {
   arena: require('../../assets/lucid-origin_Top-down_orthographic_view_of_a_fantasy_battle_arena_floor_mobile_game_backgroun-0.jpg'),
-};
-
-// Intrinsic pixel size of each image above.
-//
-// Stated rather than measured, because both renderers need the aspect ratio
-// BEFORE the image has decoded — the Skia canvas computes its whole frame as a
-// pure function and has nowhere to wait — and because a layout that changes
-// shape the moment decoding finishes is a visible jump on the first frame of
-// every run. Keep in step with the file; a wrong number here shows up as art
-// that is subtly stretched rather than as an error.
-const SIZE: Record<BackdropId, { w: number; h: number }> = {
-  arena: { w: 832, h: 1248 },
 };
 
 /**
@@ -86,13 +83,6 @@ export function backdropFor(_chapter: number): BackdropId | null {
 
 export function backdropSource(id: BackdropId): number {
   return BACKDROP[id];
-}
-
-export interface BackdropRect {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
 }
 
 /**
@@ -134,24 +124,19 @@ export function backdropLayout(
 ): BackdropRect[] {
   const src = SIZE[id];
 
-  // Overscan, so screen shake cannot drag an edge of the ground into view.
-  //
-  // The whole arena is translated by fx.shakeX/Y while a hit lands, and a
-  // backdrop sized exactly to the arena would show a strip of backstop along
-  // whichever edge the shake pulled away from — most visible on a boss death,
-  // which is the single loudest shake in the game and the worst possible moment
-  // for the floor to flicker. Derived from the shake ceiling rather than
-  // written as its own number, because two numbers that must agree are two
-  // numbers that will eventually disagree.
-  const over = CONFIG.fx.shake.max;
-
   if (!backdropScrolling()) {
-    // Cover: the larger of the two scales, so neither axis is left short.
-    const scale = Math.max((width + over * 2) / src.w, (height + over * 2) / src.h);
-    const w = src.w * scale;
-    const h = src.h * scale;
-    return [{ x: (width - w) / 2, y: (height - h) / 2, w, h }];
+    // Contain: the whole image, always. Shared with the simulation, which
+    // derives the arena from this exact rect — see backdropFit.containRect.
+    // Calling it rather than repeating the maths is the point: if these two
+    // disagreed by a pixel, the invisible wall would part company with the
+    // painted one.
+    return [containRect(id, width, height)];
   }
+
+  // Scrolling overscans by the shake ceiling. Only this mode needs it: a
+  // scrolling ground is drawn edge to edge, so any slack at the sides would
+  // show. The static mode above has bars by design and nothing to protect.
+  const over = CONFIG.fx.shake.max;
 
   // Scrolling fits the arena's width — plus the same overscan, since a shake
   // moves sideways too. The vertical ends are already covered: the first copy

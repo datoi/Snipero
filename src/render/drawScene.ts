@@ -20,7 +20,7 @@ import { FRAMES } from './atlas.gen';
 import {
   angleOf, bossKey, charKey, charSize, decorKey, floorKey, foeKey, wallKey, TILE_SIZE,
 } from './sprites';
-import { EDGE_FALLOFF, floorFor, themeFor } from './theme';
+import { EDGE_FALLOFF, FLOOR_BACKSTOP, floorFor, themeFor } from './theme';
 import { backdropFor, backdropRectsFor } from './backdrop';
 import { bodyAnim } from './anim';
 
@@ -199,8 +199,16 @@ function drawBackdrop(
   const theme = themeFor(world.chapter);
   const bd = backdropFor(world.chapter);
 
-  // Under everything, so the margin is never bare even before the art decodes.
-  fill(theme.floorColor);
+  // Under everything, so nothing is ever bare — including the letterbox bars
+  // the contained image leaves above and below itself.
+  //
+  // FLOOR_BACKSTOP rather than the theme's floor colour when there is a
+  // backdrop, and matching the Views renderer, which already used it. The two
+  // disagreed: this canvas was painting the bars chapter-one rust while the
+  // other painted them near-black, so the same frame had a different border
+  // depending on which renderer drew it. The theme colour is the TILE's average
+  // and belongs to the fallback below, not to the space around a painting.
+  fill(bd !== null ? FLOOR_BACKSTOP : theme.floorColor);
   rect(canvas, 0, 0, width, height);
 
   if (bd !== null && backdrop !== null) {

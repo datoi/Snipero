@@ -8,6 +8,9 @@ import { buildDecor } from './decor';
 import { makeFx } from './fx';
 import { makeStatus } from './status';
 import { composeWave, enemyScale } from './difficulty';
+// Geometry only — backdropFit deliberately holds no image requires, so the
+// simulation can share the layout without importing a table of assets.
+import { arenaWithin, containRect } from '../render/backdropFit';
 
 /**
  * Fit the arena into a viewport.
@@ -22,22 +25,13 @@ import { composeWave, enemyScale } from './difficulty';
  * iPhone SE gets a narrower arena than it would like. Both get the same arena.
  */
 export function fieldLayout(screenW: number, screenH: number) {
-  const c = CONFIG.field;
-
-  const availW = Math.max(1, screenW - c.minSideMargin * 2);
-  const availH = Math.max(1, screenH - c.topChrome - c.bottomChrome);
-
-  const w = Math.min(availW, availH / c.aspect);
-  const h = w * c.aspect;
-
-  return {
-    w,
-    h,
-    // Centred across the screen, and centred within the band the chrome leaves
-    // rather than pinned under it — a arena shoved hard against the HUD reads
-    // as having been squeezed in.
-    origin: vec((screenW - w) / 2, c.topChrome + (availH - h) / 2),
-  };
+  // The arena is the painted floor: fit the whole backdrop on screen, then take
+  // the patch of ground inside its walls. Which means the invisible boundary
+  // the player runs into is the one they can see, and the arena keeps one shape
+  // across devices without anyone picking a number for it — the image is mapped
+  // by a single uniform scale, so only its size changes.
+  const a = arenaWithin(containRect('arena', screenW, screenH));
+  return { w: a.w, h: a.h, origin: vec(a.x, a.y) };
 }
 
 /**

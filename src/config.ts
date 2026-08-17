@@ -194,30 +194,32 @@ export const CONFIG = {
   // height, filled with backdrop rather than left black — and buys one arena
   // that can be balanced once.
   field: {
-    /** Height as a multiple of width. The one number that defines the arena. */
-    aspect: 1.45,
+    /**
+     * The painted floor inside the backdrop image, as fractions of that image.
+     *
+     * This IS the arena. It replaced a chosen aspect ratio, and the difference
+     * is that the boundary the player runs into is now the boundary they can
+     * see: the stone walls in the art are where the arena ends, because these
+     * numbers trace them. Read off the source image — walls occupy roughly the
+     * outer 11% each side, the arch the top 11%, the foliage the bottom 8%.
+     *
+     * Retrace these whenever the backdrop changes, or the invisible wall drifts
+     * away from the painted one. See render/backdropFit.ts.
+     */
+    floor: { left: 0.11, right: 0.89, top: 0.11, bottom: 0.92 },
 
     /**
      * Screen reserved for the HUD stack above the arena, in px.
      *
      * Fixed rather than fractional because the thing it is clearing is fixed:
      * the HP readout, the boss bar and the room banner are text at a constant
-     * point size. 190 clears the banner at 185. This is also why a small phone
-     * gets a smaller arena in absolute terms — the chrome costs the same on
-     * every device, so it takes a bigger bite out of a shorter screen.
+     * point size. 190 clears the banner at 185.
+     *
+     * No longer sizes the arena — it biases where the backdrop sits, pushing
+     * the image down until the painted floor clears the HUD, as far as the
+     * leftover space allows.
      */
     topChrome: 190,
-
-    /**
-     * Reserved below the arena. Much smaller than the top, because nothing down
-     * there is opaque: the skill button is a disc in one corner and the
-     * joystick is drawn under the finger holding it. This only has to clear the
-     * home indicator and leave the bottom edge of the arena readable.
-     */
-    bottomChrome: 96,
-
-    /** Never let the arena touch the side of the screen. */
-    minSideMargin: 12,
 
     /**
      * Extra black over the margin, 0..1, on top of the backdrop's own dim.
