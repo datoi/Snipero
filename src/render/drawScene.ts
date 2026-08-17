@@ -182,6 +182,58 @@ function sprite(
   return true;
 }
 
+/**
+ * The backdrop, and the frame it makes around the arena.
+ *
+ * Screen space, before the arena is translated into place: this is the one
+ * layer that is not part of the room. The margin gets the same painted ground
+ * as the playfield and is then darkened, so the arena reads as the lit part of
+ * a continuous place rather than as a rectangle sitting on a border.
+ */
+function drawBackdrop(
+  canvas: SkCanvas,
+  world: World,
+  width: number,
+  height: number,
+  backdrop: SkImage | null,
+) {
+  const theme = themeFor(world.chapter);
+  const bd = backdropFor(world.chapter);
+
+  // Under everything, so the margin is never bare even before the art decodes.
+  fill(theme.floorColor);
+  rect(canvas, 0, 0, width, height);
+
+  if (bd !== null && backdrop !== null) {
+    const src = { x: 0, y: 0, width: backdrop.width(), height: backdrop.height() };
+    spritePaint.setAlphaf(1);
+    for (const r of backdropLayout(bd, width, height, backdropScroll(world.time))) {
+      canvas.drawImageRect(
+        backdrop,
+        src,
+        { x: r.x, y: r.y, width: r.w, height: r.h },
+        spritePaint,
+      );
+    }
+    // The readability rule the tiles get, with its own value because this art
+    // carries more contrast. See CONFIG.background.dim.
+    fill('#000000', CONFIG.background.dim);
+    rect(canvas, 0, 0, width, height);
+  }
+
+  // Push the margin back. Four rects around the arena rather than one big one
+  // with a hole, because Skia has no hole and a clip would cost a save/restore
+  // for something four fills already say.
+  const { x, y } = world.origin;
+  const bw = world.bounds.w;
+  const bh = world.bounds.h;
+  fill('#000000', CONFIG.field.marginDim);
+  rect(canvas, 0, 0, width, y);
+  rect(canvas, 0, y + bh, width, height - (y + bh));
+  rect(canvas, 0, y, x, bh);
+  rect(canvas, x + bw, y, width - (x + bw), bh);
+}
+
 export function drawScene(
   canvas: SkCanvas,
   world: World,
@@ -196,10 +248,20 @@ export function drawScene(
   const pr = CONFIG.pickups.radius;
   const theme = themeFor(world.chapter);
 
-  // Camera layer — screen shake translates the world, so the damage flash below
-  // stays pinned to the screen and never exposes an edge.
+  // ── Backdrop, across the WHOLE screen ──
+  //
+  // Drawn before the arena is translated into place, because it is the one
+  // thing that is not part of the arena: it fills the letterbox margin too, and
+  // that margin showing painted ground rather than black is what makes the
+  // playfield read as a place inside a bigger place.
+  drawBackdrop(canvas, world, width, height, backdrop);
+
+  // Camera layer. Two translations in one: the arena's own offset on the
+  // screen, plus the shake. Everything after this is in ARENA coordinates —
+  // which is every other line in this file, and is why letterboxing the
+  // playfield cost the renderer one `translate` and nothing else.
   canvas.save();
-  canvas.translate(fx.shakeX, fx.shakeY);
+  canvas.translate(world.origin.x + fx.shakeX, world.origin.y + fx.shakeY);
 
   // ── Floor ──
   //
@@ -212,50 +274,36 @@ export function drawScene(
   // Tiled with a loop rather than a repeating image shader because the tile is a
   // sub-rect of the atlas, and an image shader repeats the whole texture. ~100
   // rect draws on one already-bound texture is nothing next to a texture swap.
-  fill(theme.floorColor);
-  rect(canvas, 0, 0, width, height);
+  // Only the FALLBACK lives here now — the painted backdrop was drawn across
+  // the whole screen before the translate, margin included. What is left is
+  // what the arena wears when there is no backdrop, or has not decoded yet, and
+  // it is drawn to the arena rather than the screen.
+  const bw = world.bounds.w;
+  const bh = world.bounds.h;
+  const painted = backdropFor(world.chapter) !== null && backdrop !== null;
 
-  // The painted backdrop takes the ground when it has decoded, and the tiled
-  // floor below is what the arena falls back to until then — which is the same
-  // contract the flat colour above already has, one layer further up. Drawing
-  // both would be the tile grid rendered purely to be covered.
-  const bd = backdropFor(world.chapter);
-  const painted = bd !== null && backdrop !== null;
+  if (!painted) {
+    fill(theme.floorColor);
+    rect(canvas, 0, 0, bw, bh);
 
-  if (bd !== null && backdrop !== null) {
-    const src = { x: 0, y: 0, width: backdrop.width(), height: backdrop.height() };
-    spritePaint.setAlphaf(1);
-    for (const r of backdropLayout(bd, width, height, backdropScroll(world.time))) {
-      canvas.drawImageRect(
-        backdrop,
-        src,
-        { x: r.x, y: r.y, width: r.w, height: r.h },
-        spritePaint,
-      );
-    }
-    // Same readability rule the tiles get, its own value because this art
-    // carries more contrast. See CONFIG.background.dim.
-    fill('#000000', CONFIG.background.dim);
-    rect(canvas, 0, 0, width, height);
-  }
-
-  const floor = FRAMES[floorKey(floorFor(theme, world.roomType))];
-  if (!painted && atlas && floor) {
-    spritePaint.setAlphaf(1);
-    for (let y = 0; y < height; y += TILE_SIZE) {
-      for (let x = 0; x < width; x += TILE_SIZE) {
-        canvas.drawImageRect(
-          atlas,
-          { x: floor.x, y: floor.y, width: floor.w, height: floor.h },
-          { x, y, width: TILE_SIZE, height: TILE_SIZE },
-          spritePaint,
-        );
+    const floor = FRAMES[floorKey(floorFor(theme, world.roomType))];
+    if (atlas && floor) {
+      spritePaint.setAlphaf(1);
+      for (let y = 0; y < bh; y += TILE_SIZE) {
+        for (let x = 0; x < bw; x += TILE_SIZE) {
+          canvas.drawImageRect(
+            atlas,
+            { x: floor.x, y: floor.y, width: floor.w, height: floor.h },
+            { x, y, width: TILE_SIZE, height: TILE_SIZE },
+            spritePaint,
+          );
+        }
       }
+      // Knock the tileset back so the floor stays quieter than anything moving
+      // on it — the same dim the Views renderer applies, for the same reason.
+      fill('#000000', theme.floorDim);
+      rect(canvas, 0, 0, bw, bh);
     }
-    // Knock the tileset back so the floor stays quieter than anything moving on
-    // it — the same dim the Views renderer applies, for the same reason.
-    fill('#000000', theme.floorDim);
-    rect(canvas, 0, 0, width, height);
   }
 
   // ── The exit gate ──
@@ -283,15 +331,16 @@ export function drawScene(
   }
 
   // Light falling off at the walls the camera cannot show — see EDGE_FALLOFF.
+  // Against the ARENA's edges, which is where the room now actually ends.
   for (let i = 0; i < EDGE_FALLOFF.bands; i++) {
     const b = EDGE_FALLOFF.start + i * EDGE_FALLOFF.step;
     const a = EDGE_FALLOFF.alpha - i * EDGE_FALLOFF.fade;
     if (a <= 0) break;
     fill('#000000', a);
-    rect(canvas, 0, 0, width, b);
-    rect(canvas, 0, height - b, width, b);
-    rect(canvas, 0, 0, b, height);
-    rect(canvas, width - b, 0, b, height);
+    rect(canvas, 0, 0, bw, b);
+    rect(canvas, 0, bh - b, bw, b);
+    rect(canvas, 0, 0, b, bh);
+    rect(canvas, bw - b, 0, b, bh);
   }
 
   // ── Litter — oil, glass, leaves. Under everything, including cover ──

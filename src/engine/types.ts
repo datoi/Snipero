@@ -511,7 +511,25 @@ export interface World {
 
   fx: Fx;                          // cosmetic only — never read by game logic
   input: InputState;
+
+  /**
+   * The arena, in its own coordinates: everything in the simulation lives in
+   * 0..w by 0..h and knows nothing about where that sits on a screen.
+   *
+   * That is deliberate and load-bearing. The arena is now a letterboxed
+   * rectangle rather than the whole display (see CONFIG.field), and keeping it
+   * at its own origin meant the change cost the simulation nothing at all —
+   * every confine, spawn ring, cover layout and door test already worked in
+   * exactly this space. Only the renderers learned anything, and all they
+   * learned was to translate.
+   */
   bounds: { w: number; h: number };
+
+  /** The whole viewport. Renderers only — the backdrop and the margin. */
+  screen: { w: number; h: number };
+
+  /** Where the arena's origin sits on that viewport. Renderers only. */
+  origin: Vec2;
   nextId: number;
   time: number;
 }

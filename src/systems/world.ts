@@ -10,6 +10,37 @@ import { makeStatus } from './status';
 import { composeWave, enemyScale } from './difficulty';
 
 /**
+ * Fit the arena into a viewport.
+ *
+ * Returns the arena's SIZE and where it sits on the screen. The shape is fixed
+ * (CONFIG.field.aspect) and the arena is the largest rectangle of that shape
+ * which fits between the chrome, so the same fight plays out identically on
+ * every device and whatever is left over becomes decorative frame.
+ *
+ * Width-limited on tall phones and height-limited on short ones, which is the
+ * whole trade: a Pixel gives up ~66px of height it could have used, and an
+ * iPhone SE gets a narrower arena than it would like. Both get the same arena.
+ */
+export function fieldLayout(screenW: number, screenH: number) {
+  const c = CONFIG.field;
+
+  const availW = Math.max(1, screenW - c.minSideMargin * 2);
+  const availH = Math.max(1, screenH - c.topChrome - c.bottomChrome);
+
+  const w = Math.min(availW, availH / c.aspect);
+  const h = w * c.aspect;
+
+  return {
+    w,
+    h,
+    // Centred across the screen, and centred within the band the chrome leaves
+    // rather than pinned under it — a arena shoved hard against the HUD reads
+    // as having been squeezed in.
+    origin: vec((screenW - w) / 2, c.topChrome + (availH - h) / 2),
+  };
+}
+
+/**
  * The exit: an invisible band across the top of the arena.
  *
  * Nothing draws it. The backdrop paints a doorway up there, so the art IS the
@@ -25,8 +56,18 @@ function doorZone(w: number, h: number) {
 }
 
 // Build a fresh world with the player centered, then load the first room.
-export function createWorld(w: number, h: number, chapter = 0, endless = false): World {
+//
+// Takes the SCREEN size and derives the arena from it. Everything below is
+// written in arena coordinates — `w` and `h` are the playfield, not the display
+// — which is why letterboxing the arena needed no changes here beyond these
+// three lines.
+export function createWorld(
+  screenW: number, screenH: number, chapter = 0, endless = false
+): World {
   const pc = CONFIG.player;
+  const field = fieldLayout(screenW, screenH);
+  const w = field.w;
+  const h = field.h;
   const world: World = {
     player: {
       pos: vec(w / 2, h / 2),
@@ -112,6 +153,8 @@ export function createWorld(w: number, h: number, chapter = 0, endless = false):
     fx: makeFx(),
     input: { axis: vec(0, 0), moving: false, skillHeld: 0 },
     bounds: { w, h },
+    screen: { w: screenW, h: screenH },
+    origin: field.origin,
     nextId: 1,
     time: 0,
   };
@@ -122,7 +165,9 @@ export function createWorld(w: number, h: number, chapter = 0, endless = false):
 
 // Restart the run in place (keeps the same World reference the game loop holds).
 export function resetWorld(world: World, chapter = 0, endless = false) {
-  const { w, h } = world.bounds;
+  // The SCREEN, not the arena: createWorld derives one from the other, so
+  // feeding it the arena would shrink the playfield on every restart.
+  const { w, h } = world.screen;
   Object.assign(world, createWorld(w, h, chapter, endless));
 }
 
@@ -137,16 +182,26 @@ export function resetWorld(world: World, chapter = 0, endless = false) {
 // Positions scale proportionally rather than clamping: clamping stacks every
 // off-screen body onto the same edge, while scaling keeps the fight looking like
 // the fight the player was already in.
-export function resizeWorld(world: World, w: number, h: number) {
+export function resizeWorld(world: World, screenW: number, screenH: number) {
+  if (screenW <= 0 || screenH <= 0) return;
+  if (world.screen.w === screenW && world.screen.h === screenH) return;
+
+  // Re-fit the arena to the new viewport, then move everything into it. Bodies
+  // scale against the ARENA's change, not the screen's — the two differ once
+  // the field is letterboxed, and using the screen's ratio here would drift
+  // every body a little further off with each rotation.
+  const field = fieldLayout(screenW, screenH);
   const { w: ow, h: oh } = world.bounds;
-  if (w <= 0 || h <= 0) return;
-  if (ow === w && oh === h) return;
+  const w = field.w;
+  const h = field.h;
 
   const sx = w / ow;
   const sy = h / oh;
   const scale = (p: Vec2) => { p.x *= sx; p.y *= sy; };
 
   world.bounds = { w, h };
+  world.screen = { w: screenW, h: screenH };
+  world.origin = field.origin;
 
   scale(world.player.pos);
   for (const e of world.enemies) scale(e.pos);

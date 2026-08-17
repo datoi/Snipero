@@ -140,22 +140,15 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-    {/* Camera layer — screen shake translates the whole world, so the red
-        damage flash below stays pinned to the screen and never shows an edge. */}
-    <View
-      style={[
-        StyleSheet.absoluteFill,
-        { transform: [{ translateX: fx.shakeX }, { translateY: fx.shakeY }] },
-      ]}
-    >
-      {/* Floor — the chapter's ground, and the lowest layer the arena draws.
+      {/* ── Backdrop, across the WHOLE screen ──
+          Outside the arena's transform, because it is the one layer that is not
+          part of the room: it fills the letterbox margin too, and that margin
+          showing painted ground rather than black is what makes the playfield
+          read as a place inside a bigger place.
+
           Deliberately NOT `overflow: hidden`. The backdrop is drawn larger than
-          the arena so a screen shake cannot pull an edge into view, and this
-          wrapper is inside the shake transform: clipping here would move the
-          crop along with the camera and throw away exactly the overscan that
-          margin exists to provide. Nothing needs the clip — the arena is the
-          size of the screen, so the overflow lands off-surface, and the HUD is
-          a later sibling that paints over this regardless. */}
+          the screen so a shake cannot pull an edge into view, and clipping here
+          would crop away exactly that margin. */}
       <View style={[StyleSheet.absoluteFill, { backgroundColor: FLOOR_BACKSTOP }]}>
         {backdropId ? (
           // Painted ground. One rect when static, several when scrolling —
@@ -172,11 +165,58 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
               style={{ position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h }}
             />
           ))
-        ) : (
-          // Explicit size, not absoluteFill. On iOS `resizeMode="repeat"` only
-          // tiles across dimensions it actually knows: given absolute insets
-          // alone it drew a single tile in the corner and left the rest of the
-          // arena black.
+        ) : null}
+        {backdropId && (
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: '#000000', opacity: CONFIG.background.dim },
+            ]}
+          />
+        )}
+      </View>
+
+      {/* The letterbox margin, pushed back so the arena reads as the lit part
+          of the picture. Four bands rather than a border, so nothing is drawn
+          over the playfield itself. See CONFIG.field.marginDim. */}
+      {(() => {
+        const { x, y } = world.origin;
+        const { w: bw, h: bh } = world.bounds;
+        const { w: sw, h: sh } = world.screen;
+        const dim = {
+          position: 'absolute' as const,
+          backgroundColor: '#000000',
+          opacity: CONFIG.field.marginDim,
+        };
+        return (
+          <>
+            <View style={[dim, { left: 0, top: 0, width: sw, height: y }]} />
+            <View style={[dim, { left: 0, top: y + bh, width: sw, height: Math.max(0, sh - (y + bh)) }]} />
+            <View style={[dim, { left: 0, top: y, width: x, height: bh }]} />
+            <View style={[dim, { left: x + bw, top: y, width: Math.max(0, sw - (x + bw)), height: bh }]} />
+          </>
+        );
+      })()}
+
+    {/* Camera layer. Two offsets in one: where the arena sits on the screen,
+        plus the shake. Everything inside is in ARENA coordinates. */}
+    <View
+      style={[
+        StyleSheet.absoluteFill,
+        {
+          transform: [
+            { translateX: world.origin.x + fx.shakeX },
+            { translateY: world.origin.y + fx.shakeY },
+          ],
+        },
+      ]}
+    >
+      {/* Floor fallback — only when there is no backdrop. Sized to the ARENA,
+          and explicit rather than absoluteFill: on iOS `resizeMode="repeat"`
+          only tiles across dimensions it actually knows, and given absolute
+          insets alone it drew a single tile in the corner. */}
+      {!backdropId && (
+        <>
           <Image
             source={floor}
             resizeMode="repeat"
@@ -188,19 +228,19 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
               height: world.bounds.h,
             }}
           />
-        )}
-        {/* Knock the ground back so it stays quieter than anything moving on
-            it. See ArenaTheme.floorDim and CONFIG.background.dim. */}
-        <View
-          style={[
-            StyleSheet.absoluteFill,
-            {
+          <View
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: world.bounds.w,
+              height: world.bounds.h,
               backgroundColor: '#000000',
-              opacity: backdropId ? CONFIG.background.dim : theme.floorDim,
-            },
-          ]}
-        />
-      </View>
+              opacity: theme.floorDim,
+            }}
+          />
+        </>
+      )}
 
       {/* The exit gate. Drawn with the ground rather than with the actors — it
           is architecture, so anything alive passes in front of it. Built from

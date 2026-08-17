@@ -175,6 +175,61 @@ export const CONFIG = {
       legendary: [0, 16],
     } as Record<'common' | 'rare' | 'epic' | 'legendary', [number, number]>,
   },
+  // ── The playfield ──────────────────────────────────────────────────────────
+  //
+  // The arena is no longer the whole screen. It is a fixed-SHAPE rectangle
+  // centred in the space left over after the HUD, with the backdrop showing
+  // through around it as a decorative frame.
+  //
+  // The shape is the point. When the arena was the screen, its proportions were
+  // whatever the device happened to be — measured across real phones the play
+  // area ranged from 1.01 to 1.57 tall-to-wide, a 55% swing. Every distance the
+  // game is balanced on rides on that: how far a dodge carries you, how much
+  // room the spawn ring leaves, whether a boss charge can be sidestepped. The
+  // game was quietly a different game on an iPhone SE than on a Pixel, and no
+  // amount of tuning could fix both at once because there was nothing fixed to
+  // tune against.
+  //
+  // Letterboxing costs a little screen on the tallest devices — 30-70px of
+  // height, filled with backdrop rather than left black — and buys one arena
+  // that can be balanced once.
+  field: {
+    /** Height as a multiple of width. The one number that defines the arena. */
+    aspect: 1.45,
+
+    /**
+     * Screen reserved for the HUD stack above the arena, in px.
+     *
+     * Fixed rather than fractional because the thing it is clearing is fixed:
+     * the HP readout, the boss bar and the room banner are text at a constant
+     * point size. 190 clears the banner at 185. This is also why a small phone
+     * gets a smaller arena in absolute terms — the chrome costs the same on
+     * every device, so it takes a bigger bite out of a shorter screen.
+     */
+    topChrome: 190,
+
+    /**
+     * Reserved below the arena. Much smaller than the top, because nothing down
+     * there is opaque: the skill button is a disc in one corner and the
+     * joystick is drawn under the finger holding it. This only has to clear the
+     * home indicator and leave the bottom edge of the arena readable.
+     */
+    bottomChrome: 96,
+
+    /** Never let the arena touch the side of the screen. */
+    minSideMargin: 12,
+
+    /**
+     * Extra black over the margin, 0..1, on top of the backdrop's own dim.
+     *
+     * The frame has to read as "not here" at a glance and while three things
+     * are moving. Darkening does that without a border: the arena becomes the
+     * lit part of the picture, which is how a real space would look and is the
+     * same trick EDGE_FALLOFF already plays at the arena's own edges.
+     */
+    marginDim: 0.42,
+  },
+
   // ── The painted ground ─────────────────────────────────────────────────────
   //
   // The arena's backdrop art, and how (or whether) it moves. See
