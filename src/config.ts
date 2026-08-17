@@ -201,18 +201,24 @@ export const CONFIG = {
      * out to the very edge of the picture. Deliberately invisible: no border,
      * no darkening, nothing drawn at all — the barrier is felt, not seen.
      *
-     * Traced to the INSIDE OF THE BOULDER RING in the current art, not to the
-     * edge of the open grass. The ring is low scenery a body reads as standing
-     * beside rather than inside, so stopping there keeps the hero off the dense
-     * foliage at the picture's edge — which is the thing that would look wrong —
-     * without shrinking the arena to the clearing alone. The clearing by itself
-     * measures 0.65 x 0.575 of the image, which on a phone is a 255px-wide
-     * arena: about ten hero-widths across, and too tight to fight in.
+     * Traced THROUGH THE BOULDER RING in the current art, not to the edge of
+     * the open grass. The ring is low scenery a body reads as standing beside
+     * rather than inside, so letting the hero reach into it costs nothing and
+     * buys real room; what the barrier actually has to prevent is reaching the
+     * dense foliage at the picture's edge, which begins well outside these
+     * numbers. Confining play to the clearing alone would mean 0.65 x 0.575 of
+     * the image — a 255px arena on a phone, about ten hero-widths across, and
+     * far too tight to fight in.
+     *
+     * Widened ~8% from the first trace, and widened PROPORTIONALLY: the two
+     * axes move together so the arena keeps its shape. Nudging one edge alone
+     * would quietly restretch the arena and move every distance the game is
+     * balanced on.
      *
      * Retrace these whenever the backdrop changes, or the invisible wall drifts
      * away from the painted one. See render/backdropFit.ts.
      */
-    floor: { left: 0.14, right: 0.86, top: 0.15, bottom: 0.79 },
+    floor: { left: 0.11, right: 0.89, top: 0.12, bottom: 0.82 },
 
     /**
      * Screen reserved for the HUD stack above the arena, in px.
