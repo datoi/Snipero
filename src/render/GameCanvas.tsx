@@ -8,7 +8,7 @@ import {
   FLOOR, WALL, angleOf, charSize, charSprite, decorSprite, foeSprite, bossSprite,
 } from './sprites';
 import { EDGE_FALLOFF, FLOOR_BACKSTOP, floorFor, themeFor } from './theme';
-import { backdropFor, backdropLayout, backdropScroll, backdropSource } from './backdrop';
+import { backdropFor, backdropRectsFor, backdropSource } from './backdrop';
 import { gateLayout, glowAlpha } from './gate';
 import { BodyAnim, bodyAnim } from './anim';
 
@@ -125,9 +125,10 @@ export function GameCanvas({ world }: { world: World; width: number; height: num
   // world.time rather than a timer of this component's own, so the ground
   // freezes with the rest of the game behind a pause overlay.
   const backdropId = backdropFor(world.chapter);
-  const backdropRects = backdropId
-    ? backdropLayout(backdropId, world.bounds.w, world.bounds.h, backdropScroll(world.time))
-    : [];
+  // Via backdropRectsFor, which knows this is SCREEN space. Passing the arena
+  // here laid the art out to the playfield and left the bottom third of the
+  // display bare — see the note on that function.
+  const backdropRects = backdropId ? backdropRectsFor(world, backdropId) : [];
 
   // Which hands the hero is drawing with. The equipped weapon sets the pose at
   // run start; the reload is the one moment it changes mid-fight, and showing it

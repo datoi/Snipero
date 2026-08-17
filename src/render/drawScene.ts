@@ -21,7 +21,7 @@ import {
   angleOf, bossKey, charKey, charSize, decorKey, floorKey, foeKey, wallKey, TILE_SIZE,
 } from './sprites';
 import { EDGE_FALLOFF, floorFor, themeFor } from './theme';
-import { backdropFor, backdropLayout, backdropScroll } from './backdrop';
+import { backdropFor, backdropRectsFor } from './backdrop';
 import { gateLayout, glowAlpha } from './gate';
 import { bodyAnim } from './anim';
 
@@ -207,7 +207,7 @@ function drawBackdrop(
   if (bd !== null && backdrop !== null) {
     const src = { x: 0, y: 0, width: backdrop.width(), height: backdrop.height() };
     spritePaint.setAlphaf(1);
-    for (const r of backdropLayout(bd, width, height, backdropScroll(world.time))) {
+    for (const r of backdropRectsFor(world, bd)) {
       canvas.drawImageRect(
         backdrop,
         src,

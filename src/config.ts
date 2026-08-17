@@ -672,14 +672,20 @@ export const CONFIG = {
     // is a pillar whatever size the screen is, and scaling one with the
     // viewport would make it a thin strip on a phone and a monolith on a
     // tablet.
+    // The bands OVERLAP — each is drawn from the sill upward — so their alphas
+    // compound. At 0.3 across five bands the doorway filled in to roughly 0.64
+    // opaque and the gate read on a device as a solid tan panel: a UI widget
+    // lying on the grass, which is the exact thing it exists to not be. 0.13
+    // over four bands lands near 0.35, and a shallower glowStep keeps the light
+    // to the bottom half of the opening rather than flooding all of it.
     gate: {
-      postW: 16,      // pillar width
-      capW: 5,        // lit lip down the pillar's inner face
-      sillH: 7,       // threshold band across the floor of the opening
-      glowBands: 5,   // stacked steps of light, once the room is cleared
-      glowStep: 13,   // how much taller each band is than the last
-      glowTaper: 0.3, // how far the bands narrow as they climb, as a fraction
-      glowAlpha: 0.3, // brightest band's opacity; the rest fade off it
+      postW: 16,       // pillar width
+      capW: 5,         // lit lip down the pillar's inner face
+      sillH: 7,        // threshold band across the floor of the opening
+      glowBands: 4,    // stacked steps of light, once the room is cleared
+      glowStep: 9,     // how much taller each band is than the last
+      glowTaper: 0.45, // how far the bands narrow as they climb, as a fraction
+      glowAlpha: 0.13, // brightest band's opacity; the rest fade off it
     },
   },
 

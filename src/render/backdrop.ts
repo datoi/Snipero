@@ -1,4 +1,5 @@
 import { CONFIG } from '../config';
+import type { World } from '../engine/types';
 
 // The arena's painted ground, and the maths for where it goes.
 //
@@ -180,4 +181,22 @@ export function backdropLayout(
   const out: BackdropRect[] = [];
   for (; y < height + over; y += h) out.push({ x: -over, y, w, h });
   return out;
+}
+
+/**
+ * Where the backdrop's copies sit this frame, for a given world.
+ *
+ * THE ONLY WAY EITHER RENDERER SHOULD ASK. The backdrop is screen space — it
+ * fills the letterbox margin as well as the arena — and the moment those became
+ * two different rectangles, `backdropLayout` grew a way to be called wrongly
+ * that type-checks perfectly: hand it `world.bounds` instead of `world.screen`
+ * and the art is laid out to the PLAYFIELD, covering about two thirds of the
+ * display and leaving the rest bare black with the player standing in it.
+ *
+ * That shipped, and it shipped in only one of the two renderers, which is the
+ * tell — the same fact was being derived twice. This wrapper exists so the
+ * choice is made once, here, rather than at each call site.
+ */
+export function backdropRectsFor(world: World, id: BackdropId): BackdropRect[] {
+  return backdropLayout(id, world.screen.w, world.screen.h, backdropScroll(world.time));
 }
