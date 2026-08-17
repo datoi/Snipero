@@ -53,6 +53,11 @@ const PROP_MAX = 56;
 
 // Litter is sparse on purpose: it is texture, not content, and a floor covered
 // in debris is a floor you cannot read a projectile against.
+// Where the top-of-screen chrome stops and the floor starts reading as floor.
+// The stack is HUD 50-105, boss bar 110-142, room banner 185+ (see Hud.tsx), so
+// scenery starts below all of it.
+const HUD_BOTTOM = 200;
+
 const DECALS_PER_ROOM = 5;
 const DECAL_MIN = 30;
 const DECAL_MAX = 58;
@@ -77,9 +82,15 @@ export function buildDecor(
   for (let i = 0; i < DECALS_PER_ROOM; i++) {
     const size = DECAL_MIN + rand() * (DECAL_MAX - DECAL_MIN);
     const x = size / 2 + rand() * (w - size);
-    // Kept below the HUD stack. The top ~160px of the arena is chrome — health,
-    // boss bar, the exit door — and litter drawn up there reads as UI noise.
-    const top = CONFIG.door.marginTop + 40;
+    // Kept below the HUD stack: health line, boss bar, room banner. Litter drawn
+    // up there reads as UI noise rather than as floor.
+    //
+    // Its own number rather than one borrowed from CONFIG.door, which is what it
+    // used to be. That worked only while the exit happened to sit at the bottom
+    // of the chrome; the exit is now an invisible band at the very top, so the
+    // two facts have nothing to do with each other and sharing a constant would
+    // move the litter every time the doorway was retuned.
+    const top = HUD_BOTTOM;
     const y = top + rand() * (h - top - size / 2);
 
     // A decal entirely underneath a block is invisible; one that pokes out from

@@ -577,26 +577,37 @@ export const CONFIG = {
     charge: { telegraph: 0.7, speed: 680, duration: 0.55, recover: 0.5 },
   },
 
+  // ── The exit ───────────────────────────────────────────────────────────────
+  //
+  // Nothing draws this. The backdrop has a door PAINTED at the top of the
+  // arena, so the exit is that door — walking up into it leaves the room, and
+  // the game draws no marker of its own on top of the art.
+  //
+  // It used to be a grey bar that turned green, which made sense when the floor
+  // was a flat tile grid and there was nothing else up there to read as a way
+  // out. Against a backdrop with an actual doorway in it, a green box is a
+  // second door drawn over the real one — and every backdrop from here on will
+  // have its door in the same place, so the marker would always be redundant.
+  //
+  // Stored as FRACTIONS of the arena rather than pixels, because the art it has
+  // to line up with is cover-scaled: how far down the painted doorway reaches
+  // depends on the screen's aspect, so a fixed offset would sit right on one
+  // phone and halfway down the arch on another.
   door: {
-    width: 96,
-    height: 26,
+    /** Width of the opening, as a fraction of arena width. Centred. */
+    widthFrac: 0.34,
 
-    // Distance from the top of the screen.
-    //
-    // At 64 the door spanned y 51-77 and the HP readout occupies y 50-74, so
-    // the exit sat directly behind the HUD and read as another status bar —
-    // the banner said "go through the door" while the door was disguised as a
-    // health meter.
-    //
-    // The top of the screen is a stack, and everything in it has to clear the
-    // piece above:
-    //     50-105   HUD (HP line, room/level line, XP bar)
-    //    110-142   boss bar, when a boss is alive
-    //    147-173   this door
-    //    185+      room prompt banner
-    // Costs ~100px of arena at the top, which the spawn ring and the player
-    // start position both sit well clear of.
-    marginTop: 160,
+    /**
+     * How far down from the top edge the doorway reaches, as a fraction of
+     * arena height. The zone starts at the very top, so this is its full depth.
+     *
+     * 0.13 puts the threshold just under the base of the painted arch. Being
+     * generous costs nothing: the exit is inert until the room is cleared, and
+     * once it is cleared the player wants to leave anyway. Too tight is the
+     * expensive mistake — an invisible trigger you can walk over without
+     * activating reads as the game ignoring you.
+     */
+    reachFrac: 0.13,
   },
 
   joystick: {

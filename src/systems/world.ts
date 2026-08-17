@@ -9,6 +9,21 @@ import { makeFx } from './fx';
 import { makeStatus } from './status';
 import { composeWave, enemyScale } from './difficulty';
 
+/**
+ * The exit: an invisible band across the top of the arena.
+ *
+ * Nothing draws it. The backdrop paints a doorway up there, so the art IS the
+ * door and the game adds no marker of its own — see CONFIG.door. The zone runs
+ * from the very top edge down, which is why `pos.y` is half its height rather
+ * than an offset from anything.
+ */
+function doorZone(w: number, h: number) {
+  const c = CONFIG.door;
+  const width = w * c.widthFrac;
+  const height = h * c.reachFrac;
+  return { pos: vec(w / 2, height / 2), width, height, open: false };
+}
+
 // Build a fresh world with the player centered, then load the first room.
 export function createWorld(w: number, h: number, chapter = 0, endless = false): World {
   const pc = CONFIG.player;
@@ -76,12 +91,7 @@ export function createWorld(w: number, h: number, chapter = 0, endless = false):
     enemies: [],
     projectiles: [],
     enemyProjectiles: [],
-    door: {
-      pos: vec(w / 2, CONFIG.door.marginTop),
-      width: CONFIG.door.width,
-      height: CONFIG.door.height,
-      open: false,
-    },
+    door: doorZone(w, h),
     obstacles: [],
     decor: [],
     pickups: [],
@@ -149,10 +159,14 @@ export function resizeWorld(world: World, w: number, h: number) {
   if (world.boss) scale(world.boss.pos);
   for (const s of world.shrines) scale(s.pos);
 
-  // The door is positioned from config, not scaled — it must stay reachable and
-  // centred whatever the aspect ratio does.
-  world.door.pos.x = w / 2;
-  world.door.pos.y = CONFIG.door.marginTop;
+  // The exit is rebuilt from the new bounds rather than scaled. It is defined
+  // as a fraction of the arena so it keeps lining up with the doorway painted
+  // into the backdrop, and that art is re-fitted to the new size too.
+  const door = doorZone(w, h);
+  world.door.pos.x = door.pos.x;
+  world.door.pos.y = door.pos.y;
+  world.door.width = door.width;
+  world.door.height = door.height;
 
   // Cover is authored as fractions of the arena, so it has to be rebuilt rather
   // than scaled — a stretched layout would violate its own minimum lane widths.

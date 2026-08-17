@@ -40,7 +40,7 @@ export function buildObstacles(w: number, h: number, index: number, isBossRoom: 
     const o: Obstacle = { pos: { x: l.x * w, y: l.y * h }, w: l.w * w, h: l.h * h };
     snapToArenaEdge(o, w, h);
     // Never let cover grow over the doorway — the exit has to stay walkable.
-    if (!blocksDoor(o, w)) out.push(o);
+    if (!blocksDoor(o, w, h)) out.push(o);
   }
   return out;
 }
@@ -68,10 +68,15 @@ function snapToArenaEdge(o: Obstacle, w: number, h: number) {
 }
 
 // The doorway plus the approach lane below it, kept clear of cover.
-function blocksDoor(o: Obstacle, w: number): boolean {
+//
+// Matters more now than it did when the exit was a green bar: the doorway is
+// invisible, so a block sitting in front of it would leave the player walking
+// into cover at a spot the game gives no reason to believe is special. Sized
+// from the same fractions the zone itself uses — see CONFIG.door.
+function blocksDoor(o: Obstacle, w: number, h: number): boolean {
   const d = CONFIG.door;
-  const laneHalfW = d.width / 2 + CONFIG.obstacles.doorClearance;
-  const laneBottom = d.marginTop + d.height / 2 + CONFIG.obstacles.doorClearance;
+  const laneHalfW = (w * d.widthFrac) / 2 + CONFIG.obstacles.doorClearance;
+  const laneBottom = h * d.reachFrac + CONFIG.obstacles.doorClearance;
   return (
     Math.abs(o.pos.x - w / 2) < laneHalfW + halfW(o) &&
     o.pos.y - halfH(o) < laneBottom

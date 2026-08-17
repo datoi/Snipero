@@ -190,7 +190,7 @@ export function drawScene(
   backdrop: SkImage | null = null,
 ) {
   const {
-    player, enemies, projectiles, enemyProjectiles, door, obstacles, decor, pickups, fx,
+    player, enemies, projectiles, enemyProjectiles,  obstacles, decor, pickups, fx,
   } = world;
   const pr = CONFIG.pickups.radius;
   const theme = themeFor(world.chapter);
@@ -348,32 +348,13 @@ export function drawScene(
     canvas.drawOval({ x: cx - rx, y: cy - rx * 0.5 + drop, width: rx * 2, height: rx }, fillPaint);
   };
 
-  // ── Door — grey when locked, glowing green when open ──
-  const dx = door.pos.x - door.width / 2;
-  const dy = door.pos.y - door.height / 2;
-
-  // Frame posts either side. A plain filled rectangle reads as a status bar —
-  // which is exactly how it was being read while it sat behind the HUD — so the
-  // door gets a silhouette no HUD element has.
-  fill('#2a2f3a');
-  roundRect(canvas, dx - 8, dy - 6, 8, door.height + 12, 3);
-  roundRect(canvas, dx + door.width, dy - 6, 8, door.height + 12, 3);
-
-  fill(door.open ? '#3ecf5f' : '#3a3f4a');
-  roundRect(canvas, dx, dy, door.width, door.height, 6);
-
-  if (door.open) {
-    stroke('#b6ffcf', 3);
-    strokeRoundRect(canvas, dx + 1.5, dy + 1.5, door.width - 3, door.height - 3, 5);
-    // Arrow through the opening: the banner already says "go through the door",
-    // and the door should say the same thing without words.
-    stroke('#eafff1', 3);
-    const cx = door.pos.x;
-    const cy = door.pos.y;
-    canvas.drawLine(cx, cy + 7, cx, cy - 7, strokePaint);
-    canvas.drawLine(cx - 6, cy - 1, cx, cy - 7, strokePaint);
-    canvas.drawLine(cx + 6, cy - 1, cx, cy - 7, strokePaint);
-  }
+  // ── The exit is deliberately not drawn ──
+  //
+  // The backdrop paints a doorway across the top of the arena, so that art is
+  // the door. What used to be here was a grey bar that turned green, and over a
+  // painted arch it was simply a second door drawn on top of the real one. The
+  // zone that actually moves the player on lives in CONFIG.door; the only cue
+  // is the room-cleared banner, which already says which way to walk.
 
   // ── Loot — under the actors so bodies always read on top ──
   for (const p of pickups) {
